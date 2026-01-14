@@ -162,14 +162,13 @@ const CARDS = [
 
 // --- Game State ---
 const state = {
-  phase: "pick",     // pick | battle | over
-  turn: "player",    // player | enemy
+  phase: "pick",
+  turn: "player",
   round: 1,
   player: null,
   enemy: null
 };
 
-// --- Helpers ---
 const $ = (id) => document.getElementById(id);
 
 function showView(view) {
@@ -209,18 +208,16 @@ function log(msg, cls="") {
 }
 
 function dmgCalc(attacker, defender) {
-  const rng = Math.floor(Math.random() * 2); // 0 or 1
+  const rng = Math.floor(Math.random() * 2);
   const shieldBlock = Math.floor(defender.shield / 2);
   let dmg = attacker.atk + rng - shieldBlock;
   dmg = Math.max(1, dmg);
 
-  // boost from some skills (Daysi)
   if (attacker.boost > 0) {
     dmg += 3;
     attacker.boost = 0;
   }
 
-  // stun makes attacker weaker next attack
   if (attacker.stunned > 0) {
     dmg = Math.max(1, dmg - 2);
   }
@@ -228,9 +225,15 @@ function dmgCalc(attacker, defender) {
 }
 
 function applyDamage(defender, dmg) {
-  defender.hp = Math.max(0, defender.hp - dmg);
-  defender.shield = Math.max(0, defender.shield - 1);
+  // Armor/Shield takes damage first
+  const armorAbsorb = Math.min(defender.shield, dmg);
+  defender.shield -= armorAbsorb;
+
+  // Remaining damage goes to HP
+  const remaining = dmg - armorAbsorb;
+  defender.hp = Math.max(0, defender.hp - remaining);
 }
+
 
 function tickStatuses(f) {
   if (f.cooldown > 0) f.cooldown -= 1;
@@ -250,7 +253,6 @@ function tryEnemyPassive() {
     return;
   }
 
-  // Passive only for original 3 (you can expand later)
   if (e.id === "3dm4rk") {
     p.frozen = 1;
     log(`Round ${state.round}: ${e.name}'s passive triggers — Time Freeze! You lose your next turn.`, "bad");
@@ -371,7 +373,6 @@ function enemyAI() {
   if (!checkWin()) nextTurn();
 }
 
-// --- Player actions ---
 function playerAttack() {
   const p = state.player, e = state.enemy;
 
@@ -406,7 +407,6 @@ function playerEndTurn() {
   nextTurn();
 }
 
-// --- Setup / Picking ---
 function renderPick() {
   const grid = $("pickGrid");
   grid.innerHTML = "";
@@ -487,13 +487,11 @@ function resetAll() {
   showView("setup");
 }
 
-// --- Bind buttons ---
 $("btnAttack").addEventListener("click", playerAttack);
 $("btnSkill").addEventListener("click", playerSkill);
 $("btnEnd").addEventListener("click", playerEndTurn);
 $("btnReset").addEventListener("click", resetAll);
 
-// Navigation safe binding
 const safeOn = (id, fn) => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("click", fn);
