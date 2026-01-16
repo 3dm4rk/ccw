@@ -332,11 +332,66 @@ const BASE_CARDS = [
   }
 ];
 
+
+// REMOVE_FREE_3DM4RK_TREMO
+// Make 3dm4rk + Tremo shop-only (not free starters)
+(() => {
+  try {
+    const ids = new Set(["3dm4rk", "tremo"]);
+    for (let i = (BASE_CARDS || []).length - 1; i >= 0; i--) {
+      if (ids.has(BASE_CARDS[i].id)) BASE_CARDS.splice(i, 1);
+    }
+  } catch (e) {}
+})();
+
 // =========================
 // BUYABLE/UNLOCKABLE CARDS (SHOP)
 // After purchase -> playable + appears in Pick, Gallery, Enemy pool
 // =========================
 const UNLOCKABLE_CARD_DEFS = {
+
+
+  // ✅ Requested: shop-only starters
+  "3dm4rk": {
+    id: "3dm4rk",
+    name: "3dm4rk",
+    img: "cards/3dm4rk.png",
+    atk: 3,
+    def: 2,
+    hp: 5,
+    skillName: "Freeze Time",
+    skillDesc: "Skip the enemy's next turn, deal damage equal to (enemy Armor - enemy HP), gain +2 Armor, and heal +3 HP. (cooldown 2 turns).",
+    skill: (me, foe) => {
+      if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
+      foe.frozen = 1;
+      const dmg = Math.max(0, (foe.shield || 0) - (foe.hp || 0));
+      if (dmg > 0) applyDamage(foe, dmg, { silent: true, source: "skill" });
+      const gained = gainShield(me, 2);
+      const healBlocked = !canHeal(me);
+      if (!healBlocked) me.hp = Math.min(me.maxHp, me.hp + 3);
+      me.cooldown = 2;
+      return { ok: true, msg: healBlocked ? `${me.name} freezes time! Enemy loses their next turn. Damage: ${dmg}. +${gained} Armor, healing blocked.` : `${me.name} freezes time! Enemy loses their next turn. Damage: ${dmg}. +${gained} Armor, +3 HP.` };
+    }
+  },
+  tremo: {
+    id: "tremo",
+    name: "Tremo",
+    img: "cards/tremo.png",
+    atk: 8,
+    def: 1,
+    hp: 2,
+    skillName: "Time Rewind",
+    skillDesc: "Heal +4 HP, gain +6 Armor, and deal 9 damage. (cooldown 2)",
+    skill: (me, foe) => {
+      if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
+      const healBlocked = !canHeal(me);
+      if (!healBlocked) me.hp = Math.min(me.maxHp, me.hp + 4);
+      const gained = gainShield(me, 6);
+      if (foe && Number(foe.hp) > 0) applyDamage(foe, 9, { silent: true, source: "skill" });
+      me.cooldown = 2;
+      return { ok: true, msg: healBlocked ? `${me.name} rewinds time! Healing was blocked, +${gained} Armor, and deals 9 damage.` : `${me.name} rewinds time! +4 HP, +${gained} Armor, and deals 9 damage.` };
+    }
+  },
   nebulaGunslinger: {
     id: "nebulaGunslinger",
     name: "Nebula Gunslinger",
@@ -721,12 +776,51 @@ astroWitch: {
       updateUI();
       return { ok: true, msg: `${me.name} uses Tukhang... but it failed to stun.` };
     }
-  }
+  },
 
 
+
+  // LIMITED EDITION (secret) - unlocked via 50 win streak
+  cosmoSecret: {
+    id: "cosmoSecret",
+    name: "Cosmo Secret",
+    img: "cards/cosmo-secret.png",
+    atk: 12,
+    def: 6,
+    hp: 18,
+    secret: true,
+    skillName: "Cosmo Revelation",
+    skillDesc: "Deal 10 damage, gain +5 Armor, heal 5 HP. (CD 3)",
+    skill: (me, foe) => {
+      if (me.cooldown > 0) return { ok: false, msg: 'Skill is on cooldown (' + me.cooldown + ' turns).' };
+      applyDamage(foe, 10, { silent: true, source: 'skill', });
+      const gained = gainShield(me, 5);
+      if (canHeal(me)) me.hp = Math.min(me.maxHp, me.hp + 5);
+      me.cooldown = 3;
+      return { ok: true, msg: me.name + " reveals Cosmo's secret! 10 dmg, +" + gained + " Armor, healed 5." };
+    }
+  },
 };
 
 const SHOP_CARDS = [
+
+  // ✅ Requested: make these buyable (no longer free)
+  {
+    id: "3dm4rk",
+    name: "3dm4rk",
+    img: "cards/3dm4rk.png",
+    price: 1000,
+    desc: "Damage: 3 • Armor: 2 • Life: 5 • Ability: Freeze Time (CD 2) — Skip enemy turn, deal (enemy Armor - enemy HP), gain +2 Armor, heal +3 HP.",
+    playable: true
+  },
+  {
+    id: "tremo",
+    name: "Tremo",
+    img: "cards/tremo.png",
+    price: 1000,
+    desc: "Damage: 8 • Armor: 1 • Life: 2 • Ability: Time Rewind (CD 2) — Heal +4 HP, gain +6 Armor, deal 9 damage.",
+    playable: true
+  },
 
 {
   id: "novaEmpress",
@@ -867,6 +961,7 @@ const CARD_LORE = {
   "spidigong": "A feared enforcer whose ‘Tukhang’ leaves opponents frozen in panic, unable to act."
 };
 
+
 // =========================
 // RELICS (buyable)
 // =========================
@@ -876,7 +971,17 @@ const RELICS = [
   { id: "luckyCoin", name: "Lucky Coin", price: 90, desc: "+5 extra gold every victory." },
   { id: "reinforcedPlating", name: "Reinforced Plating", price: 110, desc: "Your shield cap increases from 6 → 8." },
   { id: "adrenalSurge", name: "Adrenal Surge", price: 95, desc: "Below 50% HP, your attacks deal +1 damage." },
-  { id: "fieldMedic", name: "Field Medic", price: 85, desc: "At the start of every stage, heal 1 HP." }
+  { id: "fieldMedic", name: "Field Medic", price: 85, desc: "At the start of every stage, heal 1 HP." },
+
+  // =========================
+  // ✅ OP RELICS (shop)
+  // =========================
+  { id: "bloodcoreSigil", name: "Bloodcore Sigil", price: 5000, desc: "Lifesteal: heal 15% of damage you deal." },
+  { id: "chronoRune", name: "Chrono Rune", price: 4500, desc: "20% chance your normal attack hits twice." },
+  { id: "goldenHeart", name: "Golden Heart", price: 4000, desc: "+5 gold every turn. +10% Max HP at the start of every stage." },
+  { id: "titanPlate", name: "Titan Plate", price: 3500, desc: "Reduce all incoming damage by 2 (flat)." },
+  { id: "voidMirror", name: "Void Mirror", price: 4200, desc: "Reflect 25% of damage you take back to the enemy." },
+  { id: "phoenixEmber", name: "Phoenix Ember", price: 6000, desc: "Once per battle: when you would die, revive at 30% HP." }
 ];
 
 // =========================
@@ -885,11 +990,13 @@ const RELICS = [
 const LUCKY_DRAW = {
   singleCost: 2000,
   fiveCost: 10000,
-  // Updated rewards (NO relics):
-  //  - 1% card
-  //  - 99% gold (fixed amounts)
-  cardChance: 0.01,
-  goldTable: [100, 20, 1000, 2000, 200, 150, 250]
+  // ✅ Requested: Lucky Draw rewards
+  // - 1% chance: Card (Relicborn Titan)
+  // - 99% chance: Gold (random 1–100)
+  legendaryChance: 0.01,
+  cardChance: 0.00,
+  relicChance: 0.00,
+  goldChance: 0.99
 };
 
 // --- Storage keys ---
@@ -901,6 +1008,17 @@ const RELIC_EQUIPPED_KEY = "cb_equipped_relic";
 // --- Lucky Draw ---
 const LUCKY_ENTITY_OWNED_KEY = "cb_lucky_entity_owned";
 const LUCKY_HISTORY_KEY = "cb_lucky_history";
+
+// --- Win Streak (milestones) ---
+const STREAK_KEY = "cb_win_streak_v2";
+
+// --- Card Upgrades ---
+const CARD_UPGRADES_KEY = "cb_card_upgrades_v1";
+
+// --- Profile / Rank ---
+const PROFILE_KEY = "cb_profile_v1";
+
+
 
 // --- Game State ---
 const state = {
@@ -914,14 +1032,125 @@ const state = {
   relics: [],
   equippedRelicId: null,
   luckyEntityOwned: false,
+  winStreak: 0,
+  bestStreak: 0,
+  cardUpgrades: {},
+  profile: { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 },
   player: null,
   enemy: null,
   // Last damage/ability line that affected the PLAYER (shown on defeat)
   lastHitSummary: "",
-  lastAction: ""
+  lastAction: "",
+  // Phoenix Ember / revive flow helper:
+  // set true when the player revives so we can cancel any remaining follow-up damage in the same turn
+  justRevived: false
 };
 
 const $ = (id) => document.getElementById(id);
+
+// =========================
+// 👤 PROFILE + RANK SYSTEM
+// =========================
+
+const RANKS = [
+  { name: "Rookie", xp: 0 },
+  { name: "Bronze", xp: 300 },
+  { name: "Silver", xp: 900 },
+  { name: "Gold", xp: 1800 },
+  { name: "Platinum", xp: 3200 },
+  { name: "Diamond", xp: 5200 },
+  { name: "Master", xp: 7800 },
+  { name: "Legend", xp: 11000 }
+];
+
+function clamp(n, a, b){ n = Number(n||0); return Math.max(a, Math.min(b, n)); }
+
+function getRankForXp(xp){
+  const x = Math.max(0, Number(xp || 0));
+  let idx = 0;
+  for (let i = 0; i < RANKS.length; i++) if (x >= RANKS[i].xp) idx = i;
+  const cur = RANKS[idx];
+  const next = RANKS[idx + 1] || null;
+  return { idx, cur, next };
+}
+
+function addXp(amount, reason){
+  const prof = state.profile || (state.profile = { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 });
+  const before = getRankForXp(prof.xp);
+  prof.xp = Math.max(0, Number(prof.xp || 0) + Math.max(0, Number(amount || 0)));
+  const after = getRankForXp(prof.xp);
+
+  // Rank up toast
+  if (after.idx > before.idx) {
+    showToast(`🏅 Rank Up! ${before.cur.name} → ${after.cur.name}`);
+  } else {
+    // small xp toast for feedback
+    if (amount > 0) showToast(`+${amount} XP${reason ? ` (${reason})` : ""}`);
+  }
+
+  saveProgress();
+  updateProfileUI();
+}
+
+function updateProfileUI(){
+  const prof = state.profile || { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 };
+  const r = getRankForXp(prof.xp);
+
+  if ($("profileRankPill")) $("profileRankPill").textContent = `Rank: ${r.cur.name}`;
+  if ($("profileXpPill")) $("profileXpPill").textContent = `XP: ${Math.max(0, Number(prof.xp||0))}`;
+  if ($("rankBadge")) $("rankBadge").textContent = r.cur.name;
+  if ($("profileNameInput") && document.activeElement !== $("profileNameInput")) $("profileNameInput").value = prof.name || "Player";
+
+  if ($("statWins")) $("statWins").textContent = String(Number(prof.wins || 0));
+  if ($("statLosses")) $("statLosses").textContent = String(Number(prof.losses || 0));
+  if ($("statBestStreak")) $("statBestStreak").textContent = String(Number(state.bestStreak || 0));
+  if ($("statHighStage")) $("statHighStage").textContent = String(Number(prof.highStage || 0));
+
+  const relicName = (state.equippedRelicId && (RELICS || []).find((x) => x.id === state.equippedRelicId)?.name) || "None";
+  if ($("profileRelic")) $("profileRelic").textContent = relicName;
+
+  if (r.next) {
+    const curFloor = r.cur.xp;
+    const nextFloor = r.next.xp;
+    const within = clamp((Number(prof.xp||0) - curFloor) / Math.max(1, (nextFloor - curFloor)), 0, 1);
+    if ($("rankProgressLabel")) $("rankProgressLabel").textContent = `Next rank: ${r.next.name}`;
+    if ($("rankProgressNums")) $("rankProgressNums").textContent = `${Math.max(0, Number(prof.xp||0))} / ${nextFloor}`;
+    if ($("rankBarFill")) $("rankBarFill").style.width = `${Math.round(within * 100)}%`;
+  } else {
+    if ($("rankProgressLabel")) $("rankProgressLabel").textContent = `Max rank reached`; 
+    if ($("rankProgressNums")) $("rankProgressNums").textContent = `${Math.max(0, Number(prof.xp||0))}`;
+    if ($("rankBarFill")) $("rankBarFill").style.width = `100%`;
+  }
+}
+
+function renderProfile(){
+  updateProfileUI();
+}
+
+// =========================
+// IMAGE FALLBACKS
+// =========================
+// If a card image file is missing, show an inline placeholder instead of a broken icon.
+window.__cardPlaceholder = function (name = "Card") {
+  const safe = String(name || "Card").slice(0, 26);
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f2a44"/>
+      <stop offset="1" stop-color="#3a235a"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="18" width="364" height="564" rx="28" fill="url(#g)" stroke="rgba(255,255,255,0.22)" stroke-width="3"/>
+  <text x="200" y="310" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto" font-size="26" fill="rgba(255,255,255,0.92)">
+    ${safe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+  </text>
+  <text x="200" y="350" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto" font-size="14" fill="rgba(255,255,255,0.60)">
+    (art coming soon)
+  </text>
+</svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+};
 
 // =========================
 // ✅ SOUND SYSTEM
@@ -992,6 +1221,286 @@ function equipRelic(id) {
 }
 
 // =========================
+// SHOP TABS + RENDER
+// =========================
+function setShopTab(tab) {
+  const relicWrap = $("shopRelicsWrap");
+  const cardWrap = $("shopCardsWrap");
+  const luckyWrap = $("shopLuckyWrap");
+  const bRelics = $("tabShopRelics");
+  const bCards = $("tabShopCards");
+  const bLucky = $("tabShopLucky");
+
+  // If shop UI isn't present yet, just bail safely.
+  if (!relicWrap || !cardWrap || !luckyWrap || !bRelics || !bCards || !bLucky) return;
+
+  if (tab === "relics") {
+    relicWrap.style.display = "block";
+    cardWrap.style.display = "none";
+    luckyWrap.style.display = "none";
+    bRelics.classList.add("tabActive");
+    bCards.classList.remove("tabActive");
+    bLucky.classList.remove("tabActive");
+    // Make sure list is fresh.
+    renderShopRelics();
+  } else if (tab === "cards") {
+    relicWrap.style.display = "none";
+    cardWrap.style.display = "block";
+    luckyWrap.style.display = "none";
+    bRelics.classList.remove("tabActive");
+    bCards.classList.add("tabActive");
+    bLucky.classList.remove("tabActive");
+    renderShopCards();
+  } else {
+    // lucky
+    relicWrap.style.display = "none";
+    cardWrap.style.display = "none";
+    luckyWrap.style.display = "block";
+    bRelics.classList.remove("tabActive");
+    bCards.classList.remove("tabActive");
+    bLucky.classList.add("tabActive");
+    if (typeof renderLuckyDraw === "function") renderLuckyDraw();
+  }
+}
+
+// =========================
+// SHOP (Cards)
+// =========================
+function renderShopCards() {
+  const grid = $("shopGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  // Helper to safely place text inside an HTML attribute (e.g., title="...")
+  const escAttr = (s) => String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+  (SHOP_CARDS || []).forEach((item) => {
+    const owned = !!state.owned[item.id];
+    const canBuy = state.gold >= item.price;
+
+    // Upgrade tooltip details (shown when hovering the Upgrade button)
+    const cardDef = (typeof findCardById === "function" ? findCardById(item.id) : null) || item;
+    const baseAtk = Number(cardDef && cardDef.atk) || 0;
+    const baseDef = Number(cardDef && cardDef.def) || 0;
+    const baseHp = Number(cardDef && cardDef.hp) || 0;
+
+    const lvl = (typeof getCardLevel === "function") ? getCardLevel(item.id) : 0;
+    const maxLvl = (typeof CARD_UPGRADE_MAX_LEVEL !== "undefined") ? CARD_UPGRADE_MAX_LEVEL : 5;
+    const canUp = (typeof canUpgradeCard === "function") ? canUpgradeCard(item.id) : (lvl < maxLvl);
+    const cost = (typeof getUpgradeCost === "function") ? getUpgradeCost(item.id) : (300 * (lvl + 1));
+
+    const curAtk = baseAtk + (1 * lvl);
+    const curHp = baseHp + (2 * lvl);
+    const curDef = baseDef + Math.floor(lvl / 2);
+
+    const nextLvl = Math.min(maxLvl, lvl + 1);
+    const nextAtk = baseAtk + (1 * nextLvl);
+    const nextHp = baseHp + (2 * nextLvl);
+    const nextDef = baseDef + Math.floor(nextLvl / 2);
+
+    let upgradeTip = `Level: ${lvl}/${maxLvl}`;
+    if (!canUp) {
+      upgradeTip += `\nMAX level reached`;
+      upgradeTip += `\nStats: ATK ${curAtk}  DEF ${curDef}  HP ${curHp}`;
+    } else {
+      upgradeTip += `\nCost: ${cost} gold`;
+      upgradeTip += `\nCurrent: ATK ${curAtk}  DEF ${curDef}  HP ${curHp}`;
+      upgradeTip += `\nNext:    ATK ${nextAtk}  DEF ${nextDef}  HP ${nextHp}`;
+      if (state.gold < cost) upgradeTip += `\n(Not enough gold)`;
+    }
+
+    const div = document.createElement("div");
+    div.className = "shopItem";
+
+    const imgSrc = item.img || "";
+    const imgHtml = `
+      <img class="shopCardImg" src="${imgSrc}" alt="${item.name}"
+           onerror="this.onerror=null;this.src=window.__cardPlaceholder('${String(item.name).replace(/'/g, "\\'")}')"/>
+    `;
+
+    const btnText = owned ? "✅ Owned" : (canBuy ? "Buy" : "Not Enough Gold");
+    const btnDisabled = owned || !canBuy;
+
+    const upgradeBtnHtml = owned
+      ? `<button class="btn btnSoft" ${canUp ? "" : "disabled"} title="${escAttr(upgradeTip)}" data-upgrade-card-id="${item.id}">⬆️ Upgrade</button>`
+      : ``;
+
+    div.innerHTML = `
+      ${imgHtml}
+      <div class="shopItemTop">
+        <div>
+          <h3 class="shopName">${item.name}</h3>
+          <div class="shopMeta">
+            <span class="badge">Price: ${item.price} Gold</span>
+            ${owned ? `<span class="badge badgeOwned">Owned</span>` : `<span class="badge">Playable</span>`}
+          </div>
+        </div>
+      </div>
+      <p class="shopDesc">${item.desc || ""}</p>
+      <div class="shopActions">
+        <button class="btn btnPrimary" ${btnDisabled ? "disabled" : ""} data-shop-card-id="${item.id}">${btnText}</button>
+        ${upgradeBtnHtml}
+      </div>
+    `;
+
+    grid.appendChild(div);
+  });
+
+
+  grid.querySelectorAll("button[data-shop-card-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-shop-card-id");
+      if (!id) return;
+      playSfx("sfxBuy", 0.85);
+      buyShopCard(id);
+    });
+  });
+
+  // ✅ Per-card Upgrade button (appears next to Owned)
+  grid.querySelectorAll("button[data-upgrade-card-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-upgrade-card-id");
+      if (!id) return;
+      playSfx("sfxClick", 0.55);
+      upgradeCard(id);
+    });
+  });
+
+  // ✅ Removed the separate upgrades section under the list (no scrolling)
+  // NOTE: We are NOT deleting the feature—just not rendering it here.
+  // if (typeof renderUpgradeSection === "function") renderUpgradeSection(grid);
+}
+
+function buyShopCard(id) {
+  const item = (SHOP_CARDS || []).find((c) => c.id === id);
+  if (!item) return;
+  if (state.owned[id]) return;
+  if (state.gold < item.price) return;
+
+  state.gold -= item.price;
+  state.owned[id] = true;
+
+  saveProgress();
+  updateGoldUI();
+  renderShopCards();
+  // Make it immediately visible in Gallery/Setup.
+  if (typeof renderPick === "function") renderPick();
+  if (typeof renderGallery === "function") renderGallery();
+
+  alert(`Purchased: ${item.name} ✅\nGo to Battle/Setup to pick it!`);
+}
+
+// =========================
+// SHOP (Relics)
+// =========================
+function renderShopRelics() {
+  const grid = $("shopRelicGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  // Enforce single equipped relic.
+  if (Array.isArray(state.relics) && state.relics.length > 1) state.relics = [state.relics[0]];
+  if (!state.equippedRelicId && Array.isArray(state.relics) && state.relics.length === 1) {
+    state.equippedRelicId = state.relics[0];
+  }
+
+  (RELICS || []).forEach((r) => {
+    const owned = !!state.ownedRelics[r.id];
+    const equipped = String(state.equippedRelicId || "") === String(r.id);
+    const canBuy = state.gold >= r.price;
+
+    let btnText = "";
+    let btnDisabled = false;
+    let action = "";
+
+    if (!owned) {
+      btnText = canBuy ? "Buy & Equip" : "Not Enough Gold";
+      btnDisabled = !canBuy;
+      action = "buy";
+    } else if (equipped) {
+      btnText = "✅ Equipped";
+      btnDisabled = true;
+      action = "none";
+    } else {
+      btnText = "Equip";
+      btnDisabled = false;
+      action = "equip";
+    }
+
+    const div = document.createElement("div");
+    div.className = "shopItem";
+    div.innerHTML = `
+      <div class="shopItemTop">
+        <div>
+          <h3 class="shopName">🪬 ${r.name}</h3>
+          <div class="shopMeta">
+            <span class="badge">Price: ${r.price} Gold</span>
+            ${equipped ? `<span class="badge badgeEquipped">Equipped</span>` : (owned ? `<span class="badge badgeOwned">Owned</span>` : `<span class="badge">Relic</span>`)}
+          </div>
+        </div>
+      </div>
+      <p class="shopDesc">${r.desc}</p>
+      <div class="shopActions">
+        <button class="btn btnPrimary" ${btnDisabled ? "disabled" : ""} data-relic-action="${action}" data-relic-id="${r.id}">${btnText}</button>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+
+  grid.querySelectorAll("button[data-relic-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      playSfx("sfxClick", 0.45);
+      const id = btn.getAttribute("data-relic-id");
+      const action = btn.getAttribute("data-relic-action");
+      if (!id || !action) return;
+      if (action === "buy") buyRelic(id);
+      if (action === "equip") equipRelic(id);
+    });
+  });
+}
+
+function buyRelic(id) {
+  const r = (RELICS || []).find((x) => x.id === id);
+  if (!r) return;
+
+  if (state.ownedRelics[id]) {
+    equipRelic(id);
+    return;
+  }
+  if (state.gold < r.price) return;
+
+  state.gold -= r.price;
+  state.ownedRelics[id] = true;
+  equipRelic(id);
+
+  saveProgress();
+  updateGoldUI();
+  renderShopRelics();
+  playSfx("sfxBuy", 0.85);
+
+  if (state.phase === "battle") {
+    if (typeof log === "function") log(`🪬 Purchased & equipped relic: ${r.name}`, "good");
+  }
+
+  alert(`Purchased & Equipped: ${r.name} ✅`);
+}
+
+function renderShop() {
+  renderShopRelics();
+  renderShopCards();
+}
+
+// Keep Redeem Code button from crashing if this feature isn't wired yet.
+function redeemCodeFlow() {
+  alert("Redeem Code is coming soon ✨");
+}
+
+// =========================
 // CARD POOL (BASE + UNLOCKED)
 // =========================
 function getAllCards() {
@@ -1011,7 +1520,9 @@ function getGalleryCards() {
   const allUnlockables = Object.keys(UNLOCKABLE_CARD_DEFS || {}).map((id) => UNLOCKABLE_CARD_DEFS[id]).filter(Boolean);
   const map = new Map();
   [...BASE_CARDS, ...allUnlockables].forEach((c) => map.set(c.id, c));
-  return Array.from(map.values());
+
+  // hide secret cards until you own them
+  return Array.from(map.values()).filter((c) => !c.secret || !!(state.owned && state.owned[c.id]));
 }
 
 function findCardById(id) {
@@ -1083,7 +1594,42 @@ function loadProgress() {
     state.luckyHistory = [];
   }
 
+
+  // ---- Win Streak ----
+  try {
+    const raw = localStorage.getItem(STREAK_KEY);
+    const s = raw ? (JSON.parse(raw) || {}) : {};
+    state.winStreak = Number(s.winStreak || 0) || 0;
+    state.bestStreak = Number(s.bestStreak || 0) || 0;
+  } catch {
+    state.winStreak = 0;
+    state.bestStreak = 0;
+  }
   state.relics = state.equippedRelicId ? [state.equippedRelicId] : [];
+
+
+  // ---- Card Upgrades ----
+  try {
+    const raw = localStorage.getItem(CARD_UPGRADES_KEY);
+    state.cardUpgrades = raw ? (JSON.parse(raw) || {}) : {};
+  } catch {
+    state.cardUpgrades = {};
+  }
+
+  // ---- Profile / Rank ----
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    const p = raw ? (JSON.parse(raw) || {}) : {};
+    state.profile = {
+      name: String(p.name || "Player").slice(0, 18),
+      xp: Math.max(0, Number(p.xp || 0) || 0),
+      wins: Math.max(0, Number(p.wins || 0) || 0),
+      losses: Math.max(0, Number(p.losses || 0) || 0),
+      highStage: Math.max(0, Number(p.highStage || 0) || 0)
+    };
+  } catch {
+    state.profile = { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 };
+  }
 }
 
 
@@ -1093,7 +1639,10 @@ function saveProgress() {
   localStorage.setItem(RELIC_OWNED_KEY, JSON.stringify(state.ownedRelics));
   localStorage.setItem(RELIC_EQUIPPED_KEY, state.equippedRelicId || "");
   localStorage.setItem(LUCKY_HISTORY_KEY, JSON.stringify(state.luckyHistory || []));
+  localStorage.setItem(STREAK_KEY, JSON.stringify({ winStreak: Number(state.winStreak || 0), bestStreak: Number(state.bestStreak || 0) }));
+  localStorage.setItem(CARD_UPGRADES_KEY, JSON.stringify(state.cardUpgrades || {}));
 localStorage.setItem(LUCKY_ENTITY_OWNED_KEY, state.luckyEntityOwned ? "1" : "0");
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile || { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 }));
 }
 
 function updateGoldUI() {
@@ -1109,28 +1658,244 @@ function addGold(amount) {
   updateGoldUI();
 }
 
+
+
+// =========================
+// ⬆️ CARD UPGRADES
+// =========================
+const CARD_UPGRADE_MAX_LEVEL = 5;
+
+function getCardLevel(cardId) {
+  const id = String(cardId || "");
+  const lvl = Number((state.cardUpgrades || {})[id] || 0) || 0;
+  return Math.max(0, Math.min(CARD_UPGRADE_MAX_LEVEL, lvl));
+}
+
+function getUpgradeCost(cardId) {
+  // scales with level: 300, 600, 900, 1200, 1500
+  const lvl = getCardLevel(cardId);
+  return 300 * (lvl + 1);
+}
+
+function getUpgradedStats(cardDef) {
+  const lvl = getCardLevel(cardDef && cardDef.id);
+  const atk0 = Number(cardDef && cardDef.atk) || 0;
+  const def0 = Number(cardDef && cardDef.def) || 0;
+  const hp0  = Number(cardDef && cardDef.hp)  || 0;
+
+  // bonuses
+  const atk = atk0 + (1 * lvl);
+  const hp  = hp0  + (2 * lvl);
+  const def = def0 + Math.floor(lvl / 2);
+
+  return { atk, def, hp, level: lvl };
+}
+
+function canUpgradeCard(cardId) {
+  return getCardLevel(cardId) < CARD_UPGRADE_MAX_LEVEL;
+}
+
+function isCardUsableByPlayer(cardId) {
+  const id = String(cardId || "");
+  // base cards are always usable; unlockables require ownership
+  const isBase = (BASE_CARDS || []).some((c) => c.id === id);
+  const isOwnedUnlock = !!(state.owned && state.owned[id] && UNLOCKABLE_CARD_DEFS && UNLOCKABLE_CARD_DEFS[id]);
+  return isBase || isOwnedUnlock;
+}
+
+function upgradeCard(cardId) {
+  const id = String(cardId || "");
+  if (!isCardUsableByPlayer(id)) {
+    alert("You can only upgrade cards you can use (base cards or purchased cards)." );
+    return;
+  }
+
+  const lvl = getCardLevel(id);
+  if (lvl >= CARD_UPGRADE_MAX_LEVEL) return;
+
+  const cost = getUpgradeCost(id);
+  if (state.gold < cost) {
+    alert(`Not enough gold. Upgrade cost: ${cost}`);
+    return;
+  }
+
+  state.gold -= cost;
+  state.cardUpgrades = state.cardUpgrades || {};
+  state.cardUpgrades[id] = lvl + 1;
+
+  saveProgress();
+  updateGoldUI();
+
+  // Refresh UIs that display stats
+  if (typeof renderShopCards === "function") renderShopCards();
+  if (typeof renderPick === "function") renderPick();
+  if (typeof renderGallery === "function") renderGallery();
+
+  playSfx("sfxBuy", 0.7);
+
+  const card = findCardById(id);
+  alert(`Upgraded ${card ? card.name : id} to Lv${lvl + 1}!`);
+}
+
+function renderUpgradeSection(parent) {
+  if (!parent) return;
+
+  const section = document.createElement("div");
+  section.className = "shopItem";
+
+  const usable = getAllCards();
+  usable.sort((a, b) => a.name.localeCompare(b.name));
+
+  const rows = usable.map((c) => {
+    const st = getUpgradedStats(c);
+    const lvl = st.level;
+    const cost = getUpgradeCost(c.id);
+    const atMax = lvl >= CARD_UPGRADE_MAX_LEVEL;
+    const canPay = state.gold >= cost;
+
+    const badge = lvl > 0 ? `<span class="badge badgeOwned">Lv ${lvl}</span>` : `<span class="badge">Lv 0</span>`;
+    const btn = atMax
+      ? `<button class="btn" disabled>MAX</button>`
+      : `<button class="btn btnPrimary" ${canPay ? "" : "disabled"} data-upgrade-id="${c.id}">Upgrade (${cost}g)</button>`;
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,0.10);">
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <b>${c.name}</b>
+            ${badge}
+            <span class="pill">Damage ${st.atk} • Armor ${st.def} • Life ${st.hp}</span>
+          </div>
+        </div>
+        <div style="flex:0 0 auto;">${btn}</div>
+      </div>
+    `;
+  }).join("");
+
+  section.innerHTML = `
+    <div class="shopItemTop">
+      <div>
+        <h3 class="shopName">⬆️ Card Upgrades</h3>
+        <div class="shopMeta">
+          <span class="badge">Max Level: ${CARD_UPGRADE_MAX_LEVEL}</span>
+          <span class="badge">+1 DMG / Lv • +2 Life / Lv • +1 Armor every 2 Lv</span>
+        </div>
+      </div>
+    </div>
+    <p class="shopDesc">Upgrade your usable cards using gold. Upgrades apply in battle.</p>
+    <div>${rows || "<div class=\"muted\">No cards available.</div>"}</div>
+  `;
+
+  parent.appendChild(section);
+
+  section.querySelectorAll("button[data-upgrade-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-upgrade-id");
+      if (!id) return;
+      upgradeCard(id);
+    });
+  });
+}
+
+
+// =========================
+// ✅ WIN STREAK MILESTONES
+// =========================
+const SECRET_STREAK_CARD_ID = "cosmoSecret";
+
+function updateStreakUI() {
+  const s = Number(state.winStreak || 0) || 0;
+  const b = Number(state.bestStreak || 0) || 0;
+  const el = document.getElementById("streakTag");
+  if (el) {
+    el.textContent = `Streak: ${s}`;
+    el.title = `Best streak: ${b}`;
+  }
+}
+
+function resetWinStreak() {
+  state.winStreak = 0;
+  saveProgress();
+  updateStreakUI();
+}
+
+function unlockSecretStreakCard() {
+  if (!state.owned) state.owned = {};
+  if (state.owned[SECRET_STREAK_CARD_ID]) return false;
+
+  state.owned[SECRET_STREAK_CARD_ID] = true;
+  saveProgress();
+
+  log(`🎁 LIMITED EDITION UNLOCKED: Cosmo Secret`, "good");
+  playSfx("sfxJackpot", 0.9);
+  alert("🎁 LIMITED EDITION UNLOCKED!\n\nYou received the secret card: COSMO SECRET ✅");
+  return true;
+}
+
+function applyWinStreakMilestones() {
+  const s = Number(state.winStreak || 0) || 0;
+  let bonus = 0;
+
+  // 50 streak: secret card (limited edition)
+  if (s > 0 && s % 50 === 0) {
+    const unlocked = unlockSecretStreakCard();
+    if (!unlocked) {
+      // If already owned (repeat 50 streak), reward some gold instead
+      bonus += 250;
+      log(`🎁 50 streak reward repeated → +250 gold (already owned secret).`, "good");
+    }
+  }
+
+  // 30 streak: special message + 500 gold (dominates 10/20 bonuses)
+  if (s > 0 && s % 30 === 0) {
+    bonus += 500;
+    log(`🌌 You almost unlock the secrets of Cosmo... (+500 gold)`, "good");
+    alert("🌌 YOU ALMOST UNLOCK THE SECRETS OF COSMO...\n\nReward: +500 gold");
+  } else {
+    // 10 / 20 streak rewards
+    if (s > 0 && s % 20 === 0) bonus += 100;
+    else if (s > 0 && s % 10 === 0) bonus += 50;
+  }
+
+  if (bonus > 0) {
+    addGold(bonus);
+    floatingDamage("player", `+${bonus}g`, "good");
+    log(`🔥 Win streak bonus! Streak ${s} → +${bonus} gold.`, "good");
+  }
+}
+
+function bumpWinStreakOnWin() {
+  state.winStreak = Number(state.winStreak || 0) + 1;
+  state.bestStreak = Math.max(Number(state.bestStreak || 0), Number(state.winStreak || 0));
+  saveProgress();
+  updateStreakUI();
+  applyWinStreakMilestones();
+}
+
 function showView(view) {
-  const ids = ["home", "gallery", "setup", "game", "shop"];
+  const ids = ["home", "profile", "gallery", "setup", "game", "shop"];
   ids.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === view ? "block" : "none";
   });
   updateGoldUI();
+  if (view === "profile") updateProfileUI();
 }
 
 // =========================
 // FIGHTER
 // =========================
 function cloneCard(card) {
+  const st = (typeof getUpgradedStats === 'function') ? getUpgradedStats(card) : { atk: card.atk, def: card.def, hp: card.hp, level: 0 };
   return {
     id: card.id,
     name: card.name,
     img: card.img,
-    atk: card.atk,
-    def: card.def,
-    maxHp: card.hp,
-    hp: card.hp,
-    shield: card.def,
+    atk: st.atk,
+    def: st.def,
+    maxHp: st.hp,
+    hp: st.hp,
+    shield: st.def,
     cooldown: 0,
     frozen: 0,
     stunned: 0,
@@ -1242,6 +2007,64 @@ function spawnAttackFx(from, to) {
   setTimeout(() => fx.remove(), 260);
 }
 
+// =========================
+// 🔥 PHOENIX REVIVE FX (stunning)
+// =========================
+function ensureToastLayer() {
+  let layer = document.getElementById("toastLayer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "toastLayer";
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
+
+function showToast(text, cls = "") {
+  const layer = ensureToastLayer();
+  if (!layer) return;
+  const el = document.createElement("div");
+  el.className = `toast ${cls || ""}`.trim();
+  el.textContent = text;
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 1700);
+}
+
+function spawnReviveFx(who) {
+  const layer = ensureFxLayer();
+  if (!layer) return;
+  const card = who === "player" ? document.getElementById("playerCard") : document.getElementById("enemyCard");
+  if (!card) return;
+
+  const C = centerOf(card);
+  const lr = layer.getBoundingClientRect();
+  const x = C.x - lr.left;
+  const y = C.y - lr.top;
+
+  // Main phoenix burst
+  const fx = document.createElement("div");
+  fx.className = "reviveFx reviveFxBig";
+  fx.style.left = `${x}px`;
+  fx.style.top = `${y}px`;
+  layer.appendChild(fx);
+
+  // Extra ember burst for "stunning" feel
+  const embers = document.createElement("div");
+  embers.className = "reviveEmbers";
+  embers.style.left = `${x}px`;
+  embers.style.top = `${y}px`;
+  layer.appendChild(embers);
+
+  // Quick screen flare
+  const flare = document.createElement("div");
+  flare.className = "reviveScreenFlare";
+  document.body.appendChild(flare);
+
+  setTimeout(() => fx.remove(), 1150);
+  setTimeout(() => embers.remove(), 1250);
+  setTimeout(() => flare.remove(), 420);
+}
+
 // ✅ DIE FLIP FX
 function cardDieFlip(who) {
   const card = who === "player" ? document.getElementById("playerCard") : document.getElementById("enemyCard");
@@ -1262,6 +2085,29 @@ function cardDieFlip(who) {
   void card.offsetWidth;
   card.classList.add("dieFlip");
 }
+
+// ✅ REVIVE FLIP + PULSE
+function cardReviveFlip(who) {
+  const card = who === "player" ? document.getElementById("playerCard") : document.getElementById("enemyCard");
+  if (!card) return;
+
+  // Remove death/impact classes so revive looks clean
+  card.classList.remove(
+    "dieFlip",
+    "hitFlash",
+    "attackLeft",
+    "attackRight",
+    "recoilLeft",
+    "recoilRight",
+    "defendBump"
+  );
+
+  // Restart animations
+  card.classList.remove("reviveFlip", "revivePulse");
+  void card.offsetWidth;
+  card.classList.add("reviveFlip");
+  card.classList.add("revivePulse");
+}
 // ✅ RESET CARD VISUAL STATE (fix: gray/flipped next enemy)
 function resetCardVisuals() {
   const pEl = document.getElementById("playerCard");
@@ -1273,6 +2119,8 @@ function resetCardVisuals() {
     // remove death flip + any lingering impact classes
     el.classList.remove(
       "dieFlip",
+      "reviveFlip",
+      "revivePulse",
       "hitFlash",
       "attackLeft",
       "attackRight",
@@ -1325,6 +2173,12 @@ function applyDamage(defender, dmg, opts = {}) {
 
   const damageType = (opts.damageType || "physical").toLowerCase();
   const source = (opts.source || "attack").toLowerCase();
+
+  // ✅ OP Relic: Titan Plate (flat damage reduction)
+  // Only the player can equip relics, so apply when the PLAYER is being hit.
+  if (defender === state.player && hasRelic("titanPlate") && dmg > 0) {
+    dmg = Math.max(0, dmg - 2);
+  }
 
   // Best-effort attacker name (for Last Hit Summary)
   const inferredAttacker = opts.attackerName || opts.attacker?.name || (defender === state.player ? state.enemy?.name : state.player?.name) || "Unknown";
@@ -1403,6 +2257,56 @@ function applyDamage(defender, dmg, opts = {}) {
     state.lastHitSummary = `${inferredAttacker} ${srcLabel} • ${typeLabel} • ${parts.join(", ")}`;
   }
 
+  // ✅ OP Relic: Phoenix Ember (revive once per battle at 30% HP)
+  // Trigger AFTER damage is applied, before any win/lose checks happen in callers.
+  if (
+    defender === state.player &&
+    hasRelic("phoenixEmber") &&
+    Number(defender.hp) <= 0 &&
+    !defender.phoenixUsed
+  ) {
+    defender.phoenixUsed = true;
+    state.justRevived = true;
+    defender.hp = Math.max(1, Math.ceil(Number(defender.maxHp || 1) * 0.30));
+    log(`🔥 Phoenix Ember ignites! You revive at ${defender.hp} HP.`, "good");
+    floatingDamage("player", "REVIVE", "good");
+    // ✨ Stunning revive presentation
+    cardReviveFlip("player");
+    spawnReviveFx("player");
+    showToast("✨ You have been revived!", "good");
+
+    // optional: use an existing sfx if available
+    try {
+      const s = document.getElementById("sfxJackpot") || document.getElementById("sfxSkill");
+      if (s) { s.currentTime = 0; s.volume = 0.65; s.play(); }
+    } catch (e) {}
+  }
+
+  // ✅ OP Relic: Void Mirror (reflect 25% of damage taken)
+  // Reflect based on the ACTUAL damage that happened this hit (Armor + HP).
+  const actualTaken = Math.max(0, Number(absorbed || 0) + Number(hpLoss || 0));
+  if (defender === state.player && hasRelic("voidMirror") && actualTaken > 0 && state.enemy && Number(state.enemy.hp) > 0) {
+    const reflect = Math.max(1, Math.ceil(actualTaken * 0.25));
+    applyDamage(state.enemy, reflect, { silent: true, source: "skill", attacker: state.player, attackerName: defender.name });
+    log(`🪞 Void Mirror reflects ${reflect} damage!`, "good");
+    floatingDamage("enemy", `-${reflect}`, "warn");
+  }
+
+  // ✅ OP Relic: Bloodcore Sigil (15% lifesteal on damage dealt)
+  if (hasRelic("bloodcoreSigil") && opts.attacker === state.player && defender === state.enemy) {
+    const dealt = Math.max(0, Number(absorbed || 0) + Number(hpLoss || 0));
+    if (dealt > 0) {
+      const leeched = Math.max(1, Math.ceil(dealt * 0.15));
+      const healed = heal(state.player, leeched);
+      if (healed > 0) {
+        log(`🩸 Bloodcore Sigil lifesteals +${healed} HP.`, "good");
+        floatingDamage("player", `+${healed}`, "good");
+      } else {
+        log(`🩸 Bloodcore Sigil tried to lifesteal, but Reboot Seal blocked it!`, "warn");
+      }
+    }
+  }
+
   // Relicborn Titan on-kill scaling (attack only)
   try { triggerRelicbornTitanOnKill(opts.attacker || null, defender, opts || {}); } catch (e) {}
 
@@ -1412,6 +2316,17 @@ function applyDamage(defender, dmg, opts = {}) {
     log(`🪬 Spiked Armor reflects 1 damage!`, "good");
     floatingDamage("enemy", "-1", "warn");
   }
+
+  // ✅ OP Relic: Void Mirror (reflect 25% of damage taken)
+  try {
+    const taken = Math.max(0, Number(absorbed || 0) + Number(hpLoss || 0));
+    if (taken > 0 && defender === state.player && hasRelic("voidMirror") && state.enemy && Number(state.enemy.hp) > 0) {
+      const ref = Math.max(1, Math.ceil(taken * 0.25));
+      applyDamage(state.enemy, ref, { silent: true, source: "skill", attacker: state.player, attackerName: state.player?.name || "Player" });
+      log(`🪬 Void Mirror reflects ${ref} damage back!`, "good");
+      floatingDamage("enemy", `-${ref}`, "warn");
+    }
+  } catch (e) {}
 
   updateUI();
 }
@@ -1603,6 +2518,20 @@ function spawnNextEnemy() {
 
   
   resetCardVisuals();
+
+  // ✅ Reset once-per-battle relic triggers
+  if (state.player) state.player.phoenixUsed = false;
+
+  // ✅ OP Relic: Golden Heart (+10% Max HP each stage)
+  if (state.player && hasRelic("goldenHeart")) {
+    const curMax = Math.max(1, Number(state.player.maxHp || 1));
+    const inc = Math.max(1, Math.ceil(curMax * 0.10));
+    state.player.maxHp = curMax + inc;
+    state.player.hp = Math.min(state.player.maxHp, Number(state.player.hp || 0) + inc);
+    log(`💛 Golden Heart empowers you at stage start: +${inc} Max HP.`, "good");
+    floatingDamage("player", `+${inc} MaxHP`, "good");
+  }
+
 if (hasRelic("fieldMedic")) {
     const healed = heal(state.player, 1);
     if (healed > 0) {
@@ -1730,6 +2659,28 @@ function checkWin() {
 
   // LOSE -> flip, then show Defeat modal (Go Home)
   if (p.hp <= 0) {
+    // 🪬 Phoenix Ember: once per battle revive at 30% HP (player only)
+    if (hasRelic("phoenixEmber") && p && !p.phoenixUsed) {
+      p.phoenixUsed = true;
+      state.justRevived = true;
+      const revived = Math.max(1, Math.ceil(Number(p.maxHp || 1) * 0.30));
+      p.hp = revived;
+      log(`🪬 Phoenix Ember ignites! You revive at ${revived} HP.`, "good");
+      floatingDamage("player", `+${revived}`, "good");
+      updateUI();
+      return false;
+    }
+
+    // profile tracking (defeat)
+    if (!state.profile) state.profile = { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 };
+    state.profile.losses = Math.max(0, Number(state.profile.losses || 0)) + 1;
+    state.profile.highStage = Math.max(Number(state.profile.highStage || 0), Number(state.stage || 0));
+    saveProgress();
+
+    // small consolation XP
+    addXp(10 + Math.floor(Math.max(0, Number(state.stage || 0)) * 0.6), "defeat");
+
+    resetWinStreak();
     cardDieFlip("player");
     state.phase = "over";
     updateUI();
@@ -1785,6 +2736,18 @@ function checkWin() {
       floatingDamage("player", `+${reward}g`, "good");
       log(`🏆 Victory! +${reward} gold.`, "good");
 
+      // ✅ Win streak milestones (10/20/30/50)
+      bumpWinStreakOnWin();
+
+      // profile tracking (win) + XP
+      if (!state.profile) state.profile = { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 };
+      state.profile.wins = Math.max(0, Number(state.profile.wins || 0)) + 1;
+      state.profile.highStage = Math.max(Number(state.profile.highStage || 0), Number(state.stage || 0));
+      saveProgress();
+      const streakBonus = Math.min(15, Number(state.winStreak || 0)) * 2;
+      const xpGain = 25 + Math.floor(Math.max(1, Number(state.stage || 1)) * 6) + streakBonus;
+      addXp(xpGain, "win");
+
       state.stage += 1;
       spawnNextEnemy();
     }, 2200);
@@ -1805,6 +2768,16 @@ function nextTurn() {
   if (checkWin()) return;
 
   state.turn = state.turn === "player" ? "enemy" : "player";
+
+  // ✅ OP Relic: Golden Heart (+5 gold every turn)
+  // Trigger when a new PLAYER turn starts.
+  if (state.turn === "player" && hasRelic("goldenHeart")) {
+    state.gold = Number(state.gold || 0) + 5;
+    log(`💛 Golden Heart generates +5 gold.`, "good");
+    updateGoldUI();
+    saveProgress();
+  }
+
   updateUI();
 
   if (state.turn === "player") {
@@ -1817,6 +2790,9 @@ function nextTurn() {
 
 function enemyAI() {
   if (state.phase !== "battle") return;
+
+  // clear any stale revive flag from a previous action
+  state.justRevived = false;
 
   const e = state.enemy, p = state.player;
 
@@ -1851,10 +2827,28 @@ function enemyAI() {
         updateUI();
         // ✅ If the skill ended the fight, stop here. Otherwise continue to the normal attack.
         if (checkWin()) return;
+
+        // ✅ If Phoenix Ember revived you from the skill damage, cancel the enemy's follow-up attack.
+        if (state.justRevived) {
+          log(`🔥 Phoenix Ember rebirth! Enemy follow-up attack is canceled.`, "good");
+          // consume the flag so it doesn't affect future turns
+          state.justRevived = false;
+          nextTurn();
+          return;
+        }
       } else if (res && res.ok === false) {
         log(`✨ Enemy tried skill: ${res.msg}`, "warn");
       }
     }
+  }
+
+  // ✅ If Phoenix Ember revived you from the enemy's ability, cancel the follow-up basic attack.
+  // This prevents "leftover" damage in the same enemy turn from killing you again instantly.
+  if (state.justRevived) {
+    log(`🔥 You have been revived! Enemy follow-up damage is canceled.`, "good");
+    state.justRevived = false;
+    nextTurn();
+    return;
   }
 
   const dmg = dmgCalc(e);
@@ -1872,6 +2866,8 @@ function enemyAI() {
 // =========================
 function playerAttack() {
   state.lastAction = "attack";
+  // clear any stale revive flag from a previous action
+  state.justRevived = false;
   const p = state.player, e = state.enemy;
   if (p.frozen > 0) {
     log(`${p.name} is frozen and cannot act!`, "warn");
@@ -1903,11 +2899,32 @@ function playerAttack() {
     }
   }
 
+  // ✅ OP Relic: Chrono Rune (20% chance to attack twice)
+  if (hasRelic("chronoRune") && e && Number(e.hp) > 0 && Math.random() < 0.20) {
+    const dmg2 = dmgCalc(p);
+    log(`⏳ Chrono Rune triggers! Extra attack for ${dmg2} damage!`, "good");
+    spawnAttackFx("player", "enemy");
+    applyDamage(e, dmg2, { source: "attack", damageType: "physical", attacker: p, attackerName: p.name });
+
+    // Vampire Fang triggers on each attack
+    if (hasRelic("vampireFang")) {
+      const healed2 = heal(p, 1);
+      if (healed2 > 0) {
+        log(`🪬 Vampire Fang heals you +1 HP.`, "good");
+        floatingDamage("player", "+1", "good");
+      } else {
+        log(`🪬 Vampire Fang tried to heal, but Reboot Seal blocked it!`, "warn");
+      }
+    }
+  }
+
   if (!checkWin()) nextTurn();
 }
 
 function playerSkill() {
   state.lastAction = "skill";
+  // clear any stale revive flag from a previous action
+  state.justRevived = false;
   const p = state.player, e = state.enemy;
   if (p.frozen > 0) {
     log(`${p.name} is frozen and cannot act!`, "warn");
@@ -1948,13 +2965,15 @@ function renderPick() {
 
   all.forEach((card) => {
     const div = document.createElement("div");
+    const st = (typeof getUpgradedStats === 'function') ? getUpgradedStats(card) : { atk: card.atk, def: card.def, hp: card.hp, level: 0 };
+
     const isForbiddenPick = card.id === "cosmicGod"; // ✅ Cosmic God cannot be picked by player
     div.className = "cardPick" + (isForbiddenPick ? " disabledPick" : "");
     div.innerHTML = `
       <img src="${card.img}" alt="${card.name}" />
       <div class="titleRow" style="margin-top:10px;">
-        <strong>${card.name}${isForbiddenPick ? " 🔒" : ""}</strong>
-        <span class="pill">Damage ${card.atk} • Armor ${card.def} • Life ${card.hp}</span>
+        <strong>${card.name}${st.level>0 ? ` Lv${st.level}` : ""}${isForbiddenPick ? " 🔒" : ""}</strong>
+        <span class="pill">Damage ${st.atk} • Armor ${st.def} • Life ${st.hp}</span>
       </div>
       <div class="muted" style="margin-top:6px;">
         <b>${card.skillName}:</b> ${card.skillDesc}
@@ -1983,7 +3002,10 @@ function renderGallery() {
 
   all.forEach((card) => {
     const div = document.createElement("div");
+    const st = (typeof getUpgradedStats === 'function') ? getUpgradedStats(card) : { atk: card.atk, def: card.def, hp: card.hp, level: 0 };
+
     div.className = "cardPick";
+
 
     const enemyOnly = card.id === "cosmicGod";
     const lockTag = enemyOnly ? " 🔒" : "";
@@ -1991,8 +3013,8 @@ function renderGallery() {
     div.innerHTML = `
       <img src="${card.img}" alt="${card.name}" />
       <div class="titleRow" style="margin-top:10px;">
-        <strong>${card.name}${lockTag}</strong>
-        <span class="pill">Damage ${card.atk} • Armor ${card.def} • Life ${card.hp}</span>
+        <strong>${card.name}${st.level>0 ? ` Lv${st.level}` : ""}${lockTag}</strong>
+        <span class="pill">Damage ${st.atk} • Armor ${st.def} • Life ${st.hp}</span>
       </div>
       <div class="muted" style="margin-top:6px;">
         <b>${card.skillName}:</b> ${card.skillDesc}
@@ -2049,277 +3071,6 @@ function renderGallery() {
 
 
 
-
-// =========================
-// ✅ REDEEM CODES
-// =========================
-function redeemCodeFlow() {
-  const codeRaw = prompt("Enter redeem code:") || "";
-  const code = codeRaw.trim().toUpperCase();
-  if (!code) return;
-
-  const map = {
-    "IAMYROL": "yrol",
-    "IAMABARCA": "abarskie"
-  };
-
-  const id = map[code];
-  if (!id) {
-    alert("Invalid code.");
-    return;
-  }
-
-  if (state.owned[id]) {
-    alert("You already redeemed this legendary.");
-    return;
-  }
-
-  // Unlock permanently
-  state.owned[id] = true;
-  saveProgress();
-  updateGoldUI();
-
-  // Refresh pick/gallery so it appears immediately
-  renderPick();
-  renderGallery();
-
-  const c = UNLOCKABLE_CARD_DEFS[id];
-  alert(`Redeemed: ${c?.name || id} ⭐\nIt is now unlocked & playable!`);
-}
-
-// =========================
-// SHOP TABS
-// =========================
-function setShopTab(tab) {
-  const relicWrap = $("shopRelicsWrap");
-  const cardWrap = $("shopCardsWrap");
-  const luckyWrap = $("shopLuckyWrap");
-  const bRelics = $("tabShopRelics");
-  const bCards = $("tabShopCards");
-  const bLucky = $("tabShopLucky");
-
-  if (!relicWrap || !cardWrap || !bRelics || !bCards || !luckyWrap || !bLucky) return;
-
-  if (tab === "relics") {
-    relicWrap.style.display = "block";
-    cardWrap.style.display = "none";
-    luckyWrap.style.display = "none";
-    bRelics.classList.add("tabActive");
-    bCards.classList.remove("tabActive");
-    bLucky.classList.remove("tabActive");
-  } else if (tab === "cards") {
-    relicWrap.style.display = "none";
-    cardWrap.style.display = "block";
-    luckyWrap.style.display = "none";
-    bRelics.classList.remove("tabActive");
-    bCards.classList.add("tabActive");
-    bLucky.classList.remove("tabActive");
-  } else {
-    // lucky
-    relicWrap.style.display = "none";
-    cardWrap.style.display = "none";
-    luckyWrap.style.display = "block";
-    bRelics.classList.remove("tabActive");
-    bCards.classList.remove("tabActive");
-    bLucky.classList.add("tabActive");
-    renderLuckyDraw();
-  }
-}
-
-// =========================
-// SHOP (Cards)
-// =========================
-function renderShopCards() {
-  const grid = $("shopGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
-
-  SHOP_CARDS.forEach((item) => {
-    const owned = !!state.owned[item.id];
-    const canBuy = state.gold >= item.price;
-    const isSoon = !!item.comingSoon;
-    const imgHtml = item.img ? `<img class="shopCardImg" src="${item.img}" alt="${item.name}" />` : "";
-
-    const btnText = isSoon
-      ? "Coming Soon"
-      : owned
-        ? "✅ Owned"
-        : (canBuy ? "Buy" : "Not Enough Gold");
-
-    const btnDisabled = isSoon || owned || !canBuy;
-
-    const div = document.createElement("div");
-    div.className = "shopItem";
-    div.innerHTML = `
-      ${imgHtml}
-      <div class="shopItemTop">
-        <div>
-          <h3 class="shopName">${item.name}</h3>
-          <div class="shopMeta">
-            <span class="badge">Price: ${item.price} Gold</span>
-            ${owned ? `<span class="badge badgeOwned">Owned</span>` : (isSoon ? `<span class="badge">Soon</span>` : `<span class="badge">Playable</span>`)}
-          </div>
-        </div>
-      </div>
-      <p class="shopDesc">${item.desc}</p>
-      <div class="shopActions">
-        <button class="btn btnPrimary" ${btnDisabled ? "disabled" : ""} data-buy="${item.id}">
-          ${btnText}
-        </button>
-      </div>
-    `;
-    grid.appendChild(div);
-  });
-
-  grid.querySelectorAll("button[data-buy]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      playSfx("sfxClick", 0.45);
-      const id = btn.getAttribute("data-buy");
-      buyCardFromShop(id);
-    });
-  });
-}
-
-function buyCardFromShop(id) {
-  const item = SHOP_CARDS.find((x) => x.id === id);
-  if (!item) return;
-  if (item.comingSoon) return;
-  if (state.owned[id]) return;
-  if (state.gold < item.price) return;
-
-  state.gold -= item.price;
-  state.owned[id] = true;
-
-  saveProgress();
-  updateGoldUI();
-  renderShopCards();
-
-  renderPick();
-  renderGallery();
-
-  playSfx("sfxBuy", 0.85);
-
-  if (UNLOCKABLE_CARD_DEFS[id]) {
-    alert(`Unlocked & Playable: ${item.name} ✅\nGo to Battle Now / Setup to pick it!`);
-  } else {
-    alert(`Purchased: ${item.name} ✅`);
-  }
-}
-
-// =========================
-// SHOP (Relics)
-// =========================
-function renderShopRelics() {
-  const grid = $("shopRelicGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
-
-  // ✅ Sanity: enforce single equipped relic
-  if (Array.isArray(state.relics) && state.relics.length > 1) {
-    state.relics = [state.relics[0]];
-  }
-  if (!state.equippedRelicId && Array.isArray(state.relics) && state.relics.length === 1) {
-    state.equippedRelicId = state.relics[0];
-  }
-
-
-  RELICS.forEach((r) => {
-    const owned = !!state.ownedRelics[r.id];
-    const equipped = String(state.equippedRelicId || "") === String(r.id);
-    const canBuy = state.gold >= r.price;
-
-    let btnText = "";
-    let btnDisabled = false;
-    let action = "";
-
-    if (!owned) {
-      btnText = canBuy ? "Buy & Equip" : "Not Enough Gold";
-      btnDisabled = !canBuy;
-      action = "buy";
-    } else if (equipped) {
-      btnText = "✅ Equipped";
-      btnDisabled = true;
-      action = "none";
-    } else {
-      btnText = "Equip";
-      btnDisabled = false;
-      action = "equip";
-    }
-
-    const div = document.createElement("div");
-    div.className = "shopItem";
-    div.innerHTML = `
-      <div class="shopItemTop">
-        <div>
-          <h3 class="shopName">🪬 ${r.name}</h3>
-          <div class="shopMeta">
-            <span class="badge">Price: ${r.price} Gold</span>
-            ${equipped ? `<span class="badge badgeEquipped">Equipped</span>` : (owned ? `<span class="badge badgeOwned">Owned</span>` : `<span class="badge">Relic</span>`)}
-          </div>
-        </div>
-      </div>
-
-      <p class="shopDesc">${r.desc}</p>
-
-      <div class="shopActions">
-        <button class="btn btnPrimary" ${btnDisabled ? "disabled" : ""} data-relic-action="${action}" data-relic-id="${r.id}">
-          ${btnText}
-        </button>
-      </div>
-    `;
-    grid.appendChild(div);
-  });
-
-  grid.querySelectorAll("button[data-relic-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      playSfx("sfxClick", 0.45);
-      const id = btn.getAttribute("data-relic-id");
-      const action = btn.getAttribute("data-relic-action");
-
-      if (action === "buy") buyRelic(id);
-      if (action === "equip") equipRelic(id);
-    });
-  });
-}
-
-function buyRelic(id) {
-  const r = RELICS.find((x) => x.id === id);
-  if (!r) return;
-
-  // If already owned, just equip it
-  if (state.ownedRelics[id]) {
-    equipRelic(id);
-    return;
-  }
-
-  if (state.gold < r.price) return;
-
-  state.gold -= r.price;
-  state.ownedRelics[id] = true;
-
-  // ✅ Equip ONLY this one relic
-  equipRelic(id);
-
-  saveProgress();
-  updateGoldUI();
-  renderShopRelics();
-
-  playSfx("sfxBuy", 0.85);
-
-  if (state.phase === "battle") {
-    log(`🪬 Purchased & equipped relic: ${r.name}`, "good");
-  }
-
-  alert(`Purchased & Equipped: ${r.name} ✅`);
-}
-
-function renderShop() {
-  renderShopRelics();
-  renderShopCards();
-}
-
-
-
 // =========================
 // 🎰 LUCKY DRAW
 // =========================
@@ -2357,31 +3108,27 @@ function pickRandomFrom(arr) {
 function rollLuckyReward() {
   const r = Math.random();
 
-  // 1% Card (unique)
-  // If already owned, treat as a non-card reward to avoid "dead" draws.
-  if (!state.luckyEntityOwned && r < LUCKY_DRAW.cardChance) {
+  // ✅ 1%: Card (Relicborn Titan)
+  if (r < LUCKY_DRAW.legendaryChance) {
     return {
       type: "card",
       id: "relicbornTitan",
-      title: "LEGENDARY — Relicborn Titan",
+      title: "CARD — Relicborn Titan",
       icon: "🌟",
       rarity: "legendary",
-      desc: "6 Damage • 5 Armor • 5 Life • Passive: on kill, doubles stats • Ability: remove all armor + 50% 25/5 dmg."
+      desc: "Unlocked: Relicborn Titan (1% drop)."
     };
   }
 
-  // Otherwise: gold reward (fixed amounts; no relics in Lucky Draw)
-  const table = Array.isArray(LUCKY_DRAW.goldTable) && LUCKY_DRAW.goldTable.length
-    ? LUCKY_DRAW.goldTable
-    : [100];
-  const gold = pickRandomFrom(table) || 100;
+  // ✅ 99%: Gold reward (1–100)
+  const gold = Math.floor(Math.random() * 100) + 1; // 1–100
   return {
     type: "gold",
     amount: gold,
     title: `Gold +${gold}`,
     icon: "🪙",
     rarity: "common",
-    desc: "More gold for the shop."
+    desc: "Gold reward (1–100)."
   };
 }
 
@@ -2544,13 +3291,15 @@ function applyLuckyReward(reward) {
 
   if (reward.type === "gold") {
     addGold(reward.amount || 0);
+  } else if (reward.type === "relic") {
+    // Grant relic + auto-equip
+    state.ownedRelics[reward.id] = true;
+    equipRelic(reward.id);
+    saveProgress();
+    updateGoldUI();
+    renderShopRelics();
   } else if (reward.type === "card") {
     state.owned[reward.id] = true;
-    // Track the Lucky Draw entity as unique
-    if (reward.id === "relicbornTitan") {
-      state.luckyEntityOwned = true;
-      try { localStorage.setItem(LUCKY_ENTITY_OWNED_KEY, "1"); } catch (e) {}
-    }
     saveProgress();
     updateGoldUI();
     renderShopCards();
@@ -2765,6 +3514,28 @@ safeOn("btnBackHomeFromSetup", () => { playSfx("sfxClick", 0.45); showView("home
 safeOn("btnSetupGallery", () => { playSfx("sfxClick", 0.45); renderGallery(); showView("gallery"); });
 safeOn("btnExitToHome", () => { playSfx("sfxClick", 0.45); showView("home"); });
 
+// Profile
+safeOn("btnHomeProfile", () => { playSfx("sfxClick", 0.45); renderProfile(); showView("profile"); });
+safeOn("btnGameProfile", () => { playSfx("sfxClick", 0.45); renderProfile(); showView("profile"); });
+safeOn("btnShopProfile", () => { playSfx("sfxClick", 0.45); renderProfile(); showView("profile"); });
+safeOn("btnProfileBackHome", () => { playSfx("sfxClick", 0.45); showView("home"); });
+
+safeOn("btnSaveProfileName", () => {
+  playSfx("sfxBuy", 0.55);
+  const input = $("profileNameInput");
+  const raw = input ? String(input.value || "") : "";
+  const name = raw.replace(/\s+/g, " ").trim().slice(0, 18);
+  if (!name) {
+    showToast("⚠️ Enter a name first");
+    return;
+  }
+  if (!state.profile) state.profile = { name: "Player", xp: 0, wins: 0, losses: 0, highStage: 0 };
+  state.profile.name = name;
+  saveProgress();
+  updateProfileUI();
+  showToast(`✅ Saved as ${name}`);
+});
+
 safeOn("btnOpenShop", () => { playSfx("sfxClick", 0.45); renderShop(); setShopTab("relics"); showView("shop"); });
 safeOn("btnHomeShop", () => { playSfx("sfxClick", 0.45); renderShop(); setShopTab("relics"); showView("shop"); });
 safeOn("btnShopBackHome", () => { playSfx("sfxClick", 0.45); showView("home"); });
@@ -2785,10 +3556,10 @@ safeOn("btnLuckyClose", () => { playSfx("sfxClick", 0.35); closeLuckyModal(); })
 
 safeOn("tabShopLucky", () => { playSfx("sfxClick", 0.35); setShopTab("lucky"); });
 
-
-
-// Close any open lore tooltips when clicking elsewhere
-function closeAllLoreTooltips() {
+// Close any open lore tooltips when clicking elsewhere.
+// (We ignore clicks on the info button/tooltip itself.)
+function closeAllLoreTooltips(e) {
+  if (e && (e.target.closest('.infoWrap') || e.target.closest('.infoBtn'))) return;
   document.querySelectorAll('.infoWrap.showLore').forEach((w) => w.classList.remove('showLore'));
 }
 
@@ -2798,6 +3569,7 @@ document.addEventListener('click', closeAllLoreTooltips);
 // =========================
 loadProgress();
 updateGoldUI();
+updateProfileUI();
 renderPick();
 renderGallery();
 renderShop();
