@@ -2,6 +2,9 @@
 // CARD BATTLER (SURVIVAL + GOLD + SHOP + RELICS + AI + HIT FX + SFX)
 // =========================
 
+
+const GAME_VERSION = "single-relic-equip-v4";
+console.log("Loaded game.js", GAME_VERSION);
 // =========================
 // HELPERS (Shield / Armor rules)
 // =========================
@@ -86,6 +89,31 @@ function tryYrolPassive(defender, opts) {
   updateUI();
 }
 
+
+
+// =========================
+// 🎰 LUCKY LEGENDARY PASSIVE: Relicborn Titan
+// On defeating an enemy with a normal ATTACK, doubles ATK/DEF/MaxHP and doubles current HP (capped).
+// =========================
+function triggerRelicbornTitanOnKill(attacker, defender, opts) {
+  if (!attacker || attacker.id !== "relicbornTitan") return;
+  if (!defender || Number(defender.hp) > 0) return;
+  const source = String(opts?.source || "attack").toLowerCase();
+  if (source !== "attack") return;
+
+  attacker.atk = Math.max(0, Number(attacker.atk || 0)) * 2;
+  attacker.def = Math.max(0, Number(attacker.def || 0)) * 2;
+
+  const oldHp = Math.max(0, Number(attacker.hp || 0));
+  attacker.maxHp = Math.max(1, Number(attacker.maxHp || 1)) * 2;
+  attacker.hp = Math.min(attacker.maxHp, oldHp * 2);
+
+  // Shield is still capped by shield cap, but we double what you currently have
+  attacker.shield = Math.min(getShieldCap(), Math.max(0, Number(attacker.shield || 0)) * 2);
+
+  log(`🌟 ${attacker.name} grows stronger! (On Kill) → Stats doubled.`, "good");
+  floatingDamage(attacker === state.player ? "player" : "enemy", "🌟 x2", "good");
+}
 // =========================
 // BASE PLAYABLE CARDS
 // =========================
@@ -482,11 +510,11 @@ voidSamurai: {
   skillDesc: "Gain 4 armor and deal 6 damage. (CD 2)",
   skill: (me, foe) => {
     if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
-    me.shield += 4;
-    applyDamage(foe, 6, { silent: true, source: "skill", });
+    const gained = gainShield(me, 4);
+    applyDamage(foe, 6, { silent: true, source: "skill", attackerName: me.name, damageType: "physical" });
     me.cooldown = 2;
     updateUI();
-    return { ok: true, msg: `${me.name} uses Void Counter! +4 armor, 6 damage.` };
+    return { ok: true, msg: `${me.name} uses Void Counter! +${gained} armor, 6 damage.` };
   }
 },
 
@@ -503,9 +531,7 @@ astroWitch: {
     if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
 
     const dmg = 15;
-    foe.hp = Math.max(0, foe.hp - dmg);
-    floatingDamage("enemy", `-${dmg}`, "bad");
-    tryYrolPassive(foe, { source: "skill" });
+    applyDamage(foe, dmg, { silent: true, source: "skill", damageType: "true", attackerName: me.name });
 
     me.cooldown = 3;
     updateUI();
@@ -570,6 +596,33 @@ astroWitch: {
   // =========================
   // ✅ NEW CARDS (SHOP UPDATE)
   // =========================
+
+  // 🎰 Lucky Draw Legendary
+  relicbornTitan: {
+    id: "relicbornTitan",
+    name: "Relicborn Titan",
+    img: "cards/entity.png",
+    atk: 6,
+    def: 5,
+    hp: 5,
+    skillName: "Armor Break Roulette",
+    skillDesc: "Remove ALL enemy armor, then 50% chance to deal 25 damage, otherwise 5 damage. (CD 2)",
+    skill: (me, foe) => {
+      if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
+
+      const removed = foe.shield || 0;
+      foe.shield = 0;
+
+      const big = Math.random() < 0.5;
+      const dmg = big ? 25 : 5;
+      applyDamage(foe, dmg, { silent: true, source: "skill", attackerName: me.name });
+
+      me.cooldown = 2;
+      updateUI();
+      return { ok: true, msg: `${me.name} shatters armor (-${removed}) and rolls ${big ? "CRITICAL" : "Normal"}! ${dmg} damage.` };
+    }
+  },
+
 
   drNemesis: {
     id: "drNemesis",
@@ -669,7 +722,6 @@ astroWitch: {
       return { ok: true, msg: `${me.name} uses Tukhang... but it failed to stun.` };
     }
   }
-
 
 
 };
@@ -782,6 +834,40 @@ const SHOP_CARDS = [
 ];
 
 // =========================
+// CARD LORE (Gallery)
+// =========================
+const CARD_LORE = {
+  "3dm4rk": "A time-hacker who learned to freeze battles by stealing seconds from the void.",
+  "spacePatron": "An interstellar peacekeeper—half cop, half cosmic beacon—who arrests criminals with pure light.",
+  "luckyCat": "A wandering charm-spirit that follows gold trails and turns misfortune into opportunity.",
+  "cosmicGod": "An ancient godform sealed beyond the stars; when it awakens, reality rewinds to its favor.",
+  "daysi": "A fearless rocket courier who wins fights the same way she wins races: faster than fear.",
+  "patrickDestroyer": "A duelist raised in asteroid mines—quiet, brutal, and famous for never needing a second chance.",
+  "spaceSkeletonPirate": "A pirate crew’s last survivor, reanimated by plasma—still hungry for stolen armor.",
+  "tremo": "A chrononaut who rewinds timelines until the outcome feels ‘right’—even if it breaks the rules.",
+  "angelo": "A divine sentinel who shields allies with faith-forged armor.",
+  "baltrio": "A void-born twin-soul condensed into one body—its burst leaves only silence.",
+
+  "nebulaGunslinger": "A bounty hunter from the nebula frontier; every shot ricochets like a grudge.",
+  "solarPriestessSeraph": "High priestess of the Sunforge—her blessing mends flesh and hardens light into armor.",
+  "nebulaBladeDancer": "A starstep duelist who fights like a comet—heal, guard, then strike in dazzling rhythm.",
+  "voidChronomancer": "A scholar of collapsing moments; he erases armor as if it never existed.",
+  "starbreakerNullKing": "A king without a throne—he locks reality itself, sealing healing and shattering defenses.",
+  "novaEmpress": "Ruler of the Supernova Court; her wrath burns worlds, her victories restore her crown.",
+  "voidSamurai": "A warrior who learned to parry the void—countering with armor and a single decisive cut.",
+  "astroWitch": "A witch who reads constellations like spells—her astral surge ignores all protection.",
+
+  "yrol": "A legendary overclocker who evolves under pressure—each ability strike can awaken a new form.",
+  "abarskie": "A choir of null-sound given shape; its hymn silences powers and turns enemies’ strength against them.",
+
+  "relicbornTitan": "A titan forged from broken relics—he spins fate like a roulette wheel and calls it justice.",
+  "drNemesis": "A ruthless scientist who treats battle like an equation—poison and debuffs, repeated until solved.",
+  "hollyChild": "A fragile miracle with a toxic gift—her blessing is poison that never stops.",
+  "ohtensahorse": "A prankster beast of the outer rim—its beam is either a joke… or a catastrophe.",
+  "spidigong": "A feared enforcer whose ‘Tukhang’ leaves opponents frozen in panic, unable to act."
+};
+
+// =========================
 // RELICS (buyable)
 // =========================
 const RELICS = [
@@ -793,10 +879,28 @@ const RELICS = [
   { id: "fieldMedic", name: "Field Medic", price: 85, desc: "At the start of every stage, heal 1 HP." }
 ];
 
+// =========================
+// 🎰 LUCKY DRAW (Gacha)
+// =========================
+const LUCKY_DRAW = {
+  singleCost: 2000,
+  fiveCost: 10000,
+  // Updated rewards (NO relics):
+  //  - 1% card
+  //  - 99% gold (fixed amounts)
+  cardChance: 0.01,
+  goldTable: [100, 20, 1000, 2000, 200, 150, 250]
+};
+
 // --- Storage keys ---
 const GOLD_KEY = "cb_gold";
 const OWNED_KEY = "cb_owned";
 const RELIC_OWNED_KEY = "cb_owned_relics";
+const RELIC_EQUIPPED_KEY = "cb_equipped_relic";
+
+// --- Lucky Draw ---
+const LUCKY_ENTITY_OWNED_KEY = "cb_lucky_entity_owned";
+const LUCKY_HISTORY_KEY = "cb_lucky_history";
 
 // --- Game State ---
 const state = {
@@ -808,8 +912,13 @@ const state = {
   owned: {},
   ownedRelics: {},
   relics: [],
+  equippedRelicId: null,
+  luckyEntityOwned: false,
   player: null,
-  enemy: null
+  enemy: null,
+  // Last damage/ability line that affected the PLAYER (shown on defeat)
+  lastHitSummary: "",
+  lastAction: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -833,7 +942,7 @@ function unlockSound() {
   if (soundUnlocked) return;
   soundUnlocked = true;
 
-  const ids = ["sfxClick", "sfxAttack", "sfxSkill", "sfxEnd", "sfxWin", "sfxLose", "sfxBuy"];
+  const ids = ["sfxClick", "sfxAttack", "sfxSkill", "sfxEnd", "sfxWin", "sfxLose", "sfxBuy", "sfxDraw", "sfxJackpot"];
   ids.forEach((id) => {
     const a = document.getElementById(id);
     if (!a) return;
@@ -852,17 +961,34 @@ document.addEventListener("click", unlockSound, { once: true });
 // =========================
 // RELIC HELPERS
 // =========================
-function hasRelic(id) { return state.relics.includes(id); }
-function getShieldCap() { return hasRelic("reinforcedPlating") ? 8 : 6; }
+function hasRelic(id) {
+  // Robust: treat equippedRelicId as the single source of truth
+  return String(state.equippedRelicId || "") === String(id);
+}
+function getShieldCap() {
+  return hasRelic("reinforcedPlating") ? 8 : 6;
+}
 
 function equipRelic(id) {
-  if (state.relics.includes(id)) return;
-  state.relics.push(id);
+  if (!id) return;
 
-  if (id === "reinforcedPlating" && state.player) {
-    state.player.shield = Math.min(getShieldCap(), state.player.shield);
-  }
+  // ✅ Only 1 relic can be equipped at a time
+  state.equippedRelicId = id;
+  state.relics = [id];
+
+  // Clamp shields if cap changed
+  if (state.player) state.player.shield = Math.min(getShieldCap(), state.player.shield);
+  if (state.enemy) state.enemy.shield = Math.min(getShieldCap(), state.enemy.shield);
+
+  saveProgress();
   updateUI();
+
+  // ✅ Update shop UI instantly (no page refresh)
+  // Only rerender if the Shop view exists and is currently visible.
+  const shopView = document.getElementById("shop");
+  if (shopView && shopView.style.display !== "none") {
+    renderShopRelics();
+  }
 }
 
 // =========================
@@ -903,16 +1029,71 @@ function loadProgress() {
   try { state.owned = JSON.parse(localStorage.getItem(OWNED_KEY) || "{}") || {}; }
   catch { state.owned = {}; }
 
-  try { state.ownedRelics = JSON.parse(localStorage.getItem(RELIC_OWNED_KEY) || "{}") || {}; }
-  catch { state.ownedRelics = {}; }
+  // ---- Relics (owned + equipped) ----
+  let ownedRaw;
+  try { ownedRaw = JSON.parse(localStorage.getItem(RELIC_OWNED_KEY) || "{}") || {}; }
+  catch { ownedRaw = {}; }
 
-  state.relics = Object.keys(state.ownedRelics).filter((id) => state.ownedRelics[id]);
+  // ✅ Migration support:
+  // - old saves might store owned relics as an array: ["a","b"]
+  // - or as an object map: {a:true,b:true}
+  if (Array.isArray(ownedRaw)) {
+    state.ownedRelics = { };
+    for (const id of ownedRaw) state.ownedRelics[id] = true;
+  } else {
+    state.ownedRelics = ownedRaw;
+  }
+
+  // ✅ Load equipped relic (only 1)
+  const equippedRaw = (localStorage.getItem(RELIC_EQUIPPED_KEY) || "").trim();
+
+  // Migration: if someone accidentally saved a JSON array in the equipped key
+  let equipped = equippedRaw;
+  if (equippedRaw.startsWith("[") && equippedRaw.endsWith("]")) {
+    try {
+      const arr = JSON.parse(equippedRaw);
+      if (Array.isArray(arr) && arr.length) equipped = String(arr[0] || "").trim();
+    } catch {}
+  }
+
+  state.equippedRelicId = equipped || null;
+
+  // Fallback: if equipped not set but player owns relic(s), equip the first owned
+  if (!state.equippedRelicId) {
+    const firstOwned = Object.keys(state.ownedRelics).find((id) => state.ownedRelics[id]);
+    state.equippedRelicId = firstOwned || null;
+  }
+
+  // Final sanity: if equipped relic is not actually owned anymore, clear it
+  if (state.equippedRelicId && !state.ownedRelics[state.equippedRelicId]) {
+    state.equippedRelicId = null;
+  }
+
+  // ---- Lucky Draw ----
+  try {
+    state.luckyEntityOwned = (localStorage.getItem(LUCKY_ENTITY_OWNED_KEY) || "") === "1";
+  } catch {
+    state.luckyEntityOwned = false;
+  }
+
+  try {
+    const raw = localStorage.getItem(LUCKY_HISTORY_KEY);
+    state.luckyHistory = raw ? (JSON.parse(raw) || []) : [];
+  } catch {
+    state.luckyHistory = [];
+  }
+
+  state.relics = state.equippedRelicId ? [state.equippedRelicId] : [];
 }
+
 
 function saveProgress() {
   localStorage.setItem(GOLD_KEY, String(state.gold));
   localStorage.setItem(OWNED_KEY, JSON.stringify(state.owned));
   localStorage.setItem(RELIC_OWNED_KEY, JSON.stringify(state.ownedRelics));
+  localStorage.setItem(RELIC_EQUIPPED_KEY, state.equippedRelicId || "");
+  localStorage.setItem(LUCKY_HISTORY_KEY, JSON.stringify(state.luckyHistory || []));
+localStorage.setItem(LUCKY_ENTITY_OWNED_KEY, state.luckyEntityOwned ? "1" : "0");
 }
 
 function updateGoldUI() {
@@ -1128,9 +1309,11 @@ function dmgCalc(attacker) {
   return Math.max(1, dmg);
 }
 
-// ✅ Armor first then HP
+// ✅ Damage rules (always enforced here)
+// - PHYSICAL (default): must hit Armor first; if Armor > 0, damage ONLY reduces Armor (no HP overflow on the same hit).
+// - TRUE: ignores Armor completely and hits HP directly.
 function applyDamage(defender, dmg, opts = {}) {
-  // ✅ HARDEN: prevent NaN/undefined HP/Shield from blocking death checks
+  // ✅ HARDEN: prevent NaN/undefined HP/Shield from breaking combat logic
   dmg = Number(dmg);
   if (!Number.isFinite(dmg)) dmg = 0;
 
@@ -1140,26 +1323,92 @@ function applyDamage(defender, dmg, opts = {}) {
   defender.shield = Number(defender.shield);
   if (!Number.isFinite(defender.shield)) defender.shield = 0;
 
-  const absorbed = Math.min(defender.shield, dmg);
-  defender.shield = Math.max(0, defender.shield - absorbed);
+  const damageType = (opts.damageType || "physical").toLowerCase();
+  const source = (opts.source || "attack").toLowerCase();
 
-  const remaining = dmg - absorbed;
-  defender.hp = Math.max(0, defender.hp - remaining);
+  // Best-effort attacker name (for Last Hit Summary)
+  const inferredAttacker = opts.attackerName || opts.attacker?.name || (defender === state.player ? state.enemy?.name : state.player?.name) || "Unknown";
+
+  let absorbed = 0;
+  let hpLoss = 0;
+
+  if (dmg <= 0) {
+    // nothing
+  } else if (damageType === "true") {
+    // TRUE damage ignores armor
+    hpLoss = Math.min(defender.hp, dmg);
+    defender.hp = Math.max(0, defender.hp - hpLoss);
+  } else {
+    // PHYSICAL damage (default)
+    if (defender.shield > 0) {
+      absorbed = Math.min(defender.shield, dmg);
+      defender.shield = Math.max(0, defender.shield - absorbed);
+      // ✅ no HP overflow in the same hit
+      hpLoss = 0;
+    } else {
+      hpLoss = Math.min(defender.hp, dmg);
+      defender.hp = Math.max(0, defender.hp - hpLoss);
+    }
+  }
 
   const who = defender === state.player ? "player" : "enemy";
   pulseHit(who);
-  floatingDamage(who, `-${dmg}`, "bad");
+
+  // Damage floaters (clear feedback)
+  if (damageType === "true") {
+    if (hpLoss > 0) floatingDamage(who, `-${hpLoss}✨`, "bad");
+  } else {
+    if (absorbed > 0) floatingDamage(who, `-${absorbed}🛡️`, "warn");
+    else if (hpLoss > 0) floatingDamage(who, `-${hpLoss}❤️`, "bad");
+  }
 
   // ✅ Legendary passive checks (e.g., Yrol)
   tryYrolPassive(defender, opts || {});
 
-  if (!opts.silent) {
-    if (absorbed > 0 && remaining > 0) log(`🛡️ Armor absorbed ${absorbed}, HP took ${remaining}.`, "warn");
-    else if (absorbed > 0) log(`🛡️ Armor absorbed ${absorbed}.`, "warn");
+  // Combat log detail
+  if (!opts.silent && dmg > 0) {
+    if (damageType === "true") {
+      log(`✨ TRUE damage ignores armor → ${defender.name} takes ${hpLoss} HP.`, "warn");
+    } else if (absorbed > 0) {
+      log(`🛡️ Armor absorbs ${absorbed}. (No HP overflow this hit.)`, "warn");
+    } else {
+      log(`❤️ ${defender.name} takes ${hpLoss} HP.`, "warn");
+    }
   }
 
+  // ✅ Always show CLEAR ability damage when ENEMY skills hit the PLAYER (even if the skill uses silent damage)
+  // This avoids confusion on death: the player will always see the exact ability damage breakdown.
+  if (defender === state.player && source === "skill" && dmg > 0) {
+    const typeLabel = damageType === "true" ? "TRUE (ignores armor)" : "PHYSICAL";
+    const parts = [];
+    if (absorbed > 0) parts.push(`-${absorbed} Armor`);
+    if (hpLoss > 0) parts.push(`-${hpLoss} HP`);
+    if (!parts.length) parts.push("no effect");
+
+    // Only log if the attacker isn't the player themself (prevents weird edge-cases like self-damage)
+    const attackerIsEnemy = inferredAttacker && state.enemy && inferredAttacker === state.enemy.name;
+    if (attackerIsEnemy) {
+      log(`💥 Enemy ability damage (${typeLabel}): ${parts.join(", ")}.`, "bad");
+    }
+  }
+
+  // ✅ Last hit summary (only track for PLAYER so defeat is clear)
+  if (defender === state.player && dmg > 0) {
+    const srcLabel = source === "skill" ? "Ability" : "Attack";
+    const typeLabel = damageType === "true" ? "TRUE (ignores armor)" : "PHYSICAL";
+    const parts = [];
+    if (absorbed > 0) parts.push(`-${absorbed} Armor`);
+    if (hpLoss > 0) parts.push(`-${hpLoss} HP`);
+    if (!parts.length) parts.push("no effect");
+    state.lastHitSummary = `${inferredAttacker} ${srcLabel} • ${typeLabel} • ${parts.join(", ")}`;
+  }
+
+  // Relicborn Titan on-kill scaling (attack only)
+  try { triggerRelicbornTitanOnKill(opts.attacker || null, defender, opts || {}); } catch (e) {}
+
+  // Reflect relic
   if (defender === state.player && hasRelic("spikedArmor") && dmg > 0 && state.enemy && Number(state.enemy.hp) > 0) {
-    applyDamage(state.enemy, 1, { silent: true, source: "skill" });
+    applyDamage(state.enemy, 1, { silent: true, source: "skill", attackerName: defender.name });
     log(`🪬 Spiked Armor reflects 1 damage!`, "good");
     floatingDamage("enemy", "-1", "warn");
   }
@@ -1198,7 +1447,7 @@ function tickStatuses(f) {
     const total = Math.max(0, pctDmg + Math.ceil(flat));
 
     if (total > 0 && Number(f.hp) > 0) {
-      applyDamage(f, total, { silent: true, source: "skill" });
+      applyDamage(f, total, { silent: true, source: "skill", attackerName: "Poison", damageType: "true" });
       log(`☠️ ${f.name} takes ${total} poison damage!`, "warn");
     }
 
@@ -1375,6 +1624,8 @@ if (hasRelic("fieldMedic")) {
   state.phase = "battle";
 
   $("log").innerHTML = "";
+  // Reset last hit summary each stage so defeat shows the most recent cause clearly
+  state.lastHitSummary = "";
   log(`🔥 Stage ${state.stage}: Enemy is ${state.enemy.name}.`, "warn");
   log(`🧠 Enemy AI: ${state.enemy.aiType}`, "warn");
 
@@ -1493,7 +1744,7 @@ function checkWin() {
         title: "💀 Defeat",
         text: `You died at Stage ${state.stage}.`,
         stageLabel: `Stage ${state.stage}`,
-        hint: "Check the battle log above to see what killed you, then go home or restart.",
+        hint: `Last hit: ${state.lastHitSummary || "Unknown"}.  Check the battle log above to see what killed you, then go home or restart.`,
         goldReward: 0,
         mode: "defeat"
       });
@@ -1504,6 +1755,23 @@ function checkWin() {
 
   // WIN -> flip enemy, then reward gold (no modal) and spawn next enemy
   if (e.hp <= 0) {
+        if (state.player && state.player.id === "luckyApexEntity" && state.lastAction === "attack") {
+      const p = state.player;
+      p.atk = Math.max(1, Number(p.atk || 0) * 2);
+      p.def = Math.max(0, Number(p.def || 0) * 2);
+
+      const oldHp = Number(p.hp || 0);
+      p.maxHp = Math.max(1, Number(p.maxHp || 1) * 2);
+      p.hp = Math.min(p.maxHp, oldHp * 2);
+
+      // Double current shield but respect the current cap
+      p.shield = Math.min(getShieldCap(), Number(p.shield || 0) * 2);
+
+      log(`⭐ ${p.name} defeats an enemy → stats doubled!`, "good");
+      floatingDamage("player", "⭐ x2", "good");
+      updateUI();
+    }
+
     cardDieFlip("enemy");
     state.phase = "over";
     updateUI();
@@ -1594,7 +1862,7 @@ function enemyAI() {
   playSfx("sfxAttack", 0.75);
 
   spawnAttackFx("enemy", "player");
-  applyDamage(p, dmg);
+  applyDamage(p, dmg, { source: "attack", damageType: "physical", attacker: e, attackerName: e.name });
 
   if (!checkWin()) nextTurn();
 }
@@ -1603,6 +1871,7 @@ function enemyAI() {
 // PLAYER ACTIONS
 // =========================
 function playerAttack() {
+  state.lastAction = "attack";
   const p = state.player, e = state.enemy;
   if (p.frozen > 0) {
     log(`${p.name} is frozen and cannot act!`, "warn");
@@ -1622,7 +1891,7 @@ function playerAttack() {
   log(`${p.name} attacks for ${dmg} damage!`, "good");
 
   spawnAttackFx("player", "enemy");
-  applyDamage(e, dmg);
+  applyDamage(e, dmg, { source: "attack", damageType: "physical", attacker: p, attackerName: p.name });
 
   if (hasRelic("vampireFang")) {
     const healed = heal(p, 1);
@@ -1638,6 +1907,7 @@ function playerAttack() {
 }
 
 function playerSkill() {
+  state.lastAction = "skill";
   const p = state.player, e = state.enemy;
   if (p.frozen > 0) {
     log(`${p.name} is frozen and cannot act!`, "warn");
@@ -1734,6 +2004,45 @@ function renderGallery() {
         <b>Enemy passive:</b> Can trigger automatically each round if this card is the enemy.
       </div>
     `;
+
+
+    // ℹ️ Lore tooltip (hover the "i" icon)
+    const titleRow = div.querySelector('.titleRow');
+    const strong = titleRow ? titleRow.querySelector('strong') : null;
+    if (strong) {
+      const wrap = document.createElement('span');
+      wrap.className = 'infoWrap';
+
+      const icon = document.createElement('span');
+      icon.className = 'infoIcon';
+      icon.textContent = 'i';
+      icon.setAttribute('role', 'button');
+      icon.setAttribute('tabindex', '0');
+      icon.setAttribute('aria-label', `Lore: ${card.name}`);
+
+      const tip = document.createElement('span');
+      tip.className = 'loreTooltip';
+      tip.textContent = CARD_LORE[card.id] || `No lore available yet for ${card.name}.`;
+
+      // Hover (desktop) is handled in CSS.
+      // Click / Enter (mobile + keyboard) toggles the tooltip.
+      const toggle = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wrap.classList.toggle('showLore');
+      };
+      icon.addEventListener('click', toggle);
+      icon.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') toggle(e);
+      });
+
+      wrap.appendChild(icon);
+      wrap.appendChild(tip);
+
+      // Place the icon right beside the name
+      strong.appendChild(wrap);
+    }
+
     grid.appendChild(div);
   });
 }
@@ -1784,21 +2093,36 @@ function redeemCodeFlow() {
 function setShopTab(tab) {
   const relicWrap = $("shopRelicsWrap");
   const cardWrap = $("shopCardsWrap");
+  const luckyWrap = $("shopLuckyWrap");
   const bRelics = $("tabShopRelics");
   const bCards = $("tabShopCards");
+  const bLucky = $("tabShopLucky");
 
-  if (!relicWrap || !cardWrap || !bRelics || !bCards) return;
+  if (!relicWrap || !cardWrap || !bRelics || !bCards || !luckyWrap || !bLucky) return;
 
   if (tab === "relics") {
     relicWrap.style.display = "block";
     cardWrap.style.display = "none";
+    luckyWrap.style.display = "none";
     bRelics.classList.add("tabActive");
     bCards.classList.remove("tabActive");
-  } else {
+    bLucky.classList.remove("tabActive");
+  } else if (tab === "cards") {
     relicWrap.style.display = "none";
     cardWrap.style.display = "block";
+    luckyWrap.style.display = "none";
     bRelics.classList.remove("tabActive");
     bCards.classList.add("tabActive");
+    bLucky.classList.remove("tabActive");
+  } else {
+    // lucky
+    relicWrap.style.display = "none";
+    cardWrap.style.display = "none";
+    luckyWrap.style.display = "block";
+    bRelics.classList.remove("tabActive");
+    bCards.classList.remove("tabActive");
+    bLucky.classList.add("tabActive");
+    renderLuckyDraw();
   }
 }
 
@@ -1890,9 +2214,37 @@ function renderShopRelics() {
   if (!grid) return;
   grid.innerHTML = "";
 
+  // ✅ Sanity: enforce single equipped relic
+  if (Array.isArray(state.relics) && state.relics.length > 1) {
+    state.relics = [state.relics[0]];
+  }
+  if (!state.equippedRelicId && Array.isArray(state.relics) && state.relics.length === 1) {
+    state.equippedRelicId = state.relics[0];
+  }
+
+
   RELICS.forEach((r) => {
     const owned = !!state.ownedRelics[r.id];
+    const equipped = String(state.equippedRelicId || "") === String(r.id);
     const canBuy = state.gold >= r.price;
+
+    let btnText = "";
+    let btnDisabled = false;
+    let action = "";
+
+    if (!owned) {
+      btnText = canBuy ? "Buy & Equip" : "Not Enough Gold";
+      btnDisabled = !canBuy;
+      action = "buy";
+    } else if (equipped) {
+      btnText = "✅ Equipped";
+      btnDisabled = true;
+      action = "none";
+    } else {
+      btnText = "Equip";
+      btnDisabled = false;
+      action = "equip";
+    }
 
     const div = document.createElement("div");
     div.className = "shopItem";
@@ -1902,7 +2254,7 @@ function renderShopRelics() {
           <h3 class="shopName">🪬 ${r.name}</h3>
           <div class="shopMeta">
             <span class="badge">Price: ${r.price} Gold</span>
-            ${owned ? `<span class="badge badgeEquipped">Equipped</span>` : `<span class="badge">Relic</span>`}
+            ${equipped ? `<span class="badge badgeEquipped">Equipped</span>` : (owned ? `<span class="badge badgeOwned">Owned</span>` : `<span class="badge">Relic</span>`)}
           </div>
         </div>
       </div>
@@ -1910,19 +2262,22 @@ function renderShopRelics() {
       <p class="shopDesc">${r.desc}</p>
 
       <div class="shopActions">
-        <button class="btn btnPrimary" ${owned ? "disabled" : (!canBuy ? "disabled" : "")} data-buy-relic="${r.id}">
-          ${owned ? "✅ Equipped" : (canBuy ? "Buy & Auto-Equip" : "Not Enough Gold")}
+        <button class="btn btnPrimary" ${btnDisabled ? "disabled" : ""} data-relic-action="${action}" data-relic-id="${r.id}">
+          ${btnText}
         </button>
       </div>
     `;
     grid.appendChild(div);
   });
 
-  grid.querySelectorAll("button[data-buy-relic]").forEach((btn) => {
+  grid.querySelectorAll("button[data-relic-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
       playSfx("sfxClick", 0.45);
-      const id = btn.getAttribute("data-buy-relic");
-      buyRelic(id);
+      const id = btn.getAttribute("data-relic-id");
+      const action = btn.getAttribute("data-relic-action");
+
+      if (action === "buy") buyRelic(id);
+      if (action === "equip") equipRelic(id);
     });
   });
 }
@@ -1930,11 +2285,19 @@ function renderShopRelics() {
 function buyRelic(id) {
   const r = RELICS.find((x) => x.id === id);
   if (!r) return;
-  if (state.ownedRelics[id]) return;
+
+  // If already owned, just equip it
+  if (state.ownedRelics[id]) {
+    equipRelic(id);
+    return;
+  }
+
   if (state.gold < r.price) return;
 
   state.gold -= r.price;
   state.ownedRelics[id] = true;
+
+  // ✅ Equip ONLY this one relic
   equipRelic(id);
 
   saveProgress();
@@ -1955,6 +2318,318 @@ function renderShop() {
   renderShopCards();
 }
 
+
+
+// =========================
+// 🎰 LUCKY DRAW
+// =========================
+function renderLuckyDraw() {
+  const results = $("luckyResults");
+  if (!results) return;
+
+  const items = Array.isArray(state.luckyHistory) ? state.luckyHistory : [];
+  if (!items.length) {
+    results.innerHTML = `<div class="muted">No draws yet. Try your luck ✨</div>`;
+    return;
+  }
+
+  results.innerHTML = items.slice(-10).reverse().map((r) => {
+    const rarity = r.rarity ? ` ${r.rarity}` : "";
+    const title = r.title || "Reward";
+    const desc = r.desc || "";
+    const icon = r.icon || "✨";
+    return `
+      <div class="luckyResultItem${rarity}">
+        <div class="luckyResultLeft">${icon}</div>
+        <div>
+          <div class="luckyResultTitle"><b>${title}</b></div>
+          <div class="muted" style="margin-top:4px;">${desc}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function pickRandomFrom(arr) {
+  if (!Array.isArray(arr) || !arr.length) return null;
+  return arr[Math.floor(Math.random() * arr.length)] || null;
+}
+
+function rollLuckyReward() {
+  const r = Math.random();
+
+  // 1% Card (unique)
+  // If already owned, treat as a non-card reward to avoid "dead" draws.
+  if (!state.luckyEntityOwned && r < LUCKY_DRAW.cardChance) {
+    return {
+      type: "card",
+      id: "relicbornTitan",
+      title: "LEGENDARY — Relicborn Titan",
+      icon: "🌟",
+      rarity: "legendary",
+      desc: "6 Damage • 5 Armor • 5 Life • Passive: on kill, doubles stats • Ability: remove all armor + 50% 25/5 dmg."
+    };
+  }
+
+  // Otherwise: gold reward (fixed amounts; no relics in Lucky Draw)
+  const table = Array.isArray(LUCKY_DRAW.goldTable) && LUCKY_DRAW.goldTable.length
+    ? LUCKY_DRAW.goldTable
+    : [100];
+  const gold = pickRandomFrom(table) || 100;
+  return {
+    type: "gold",
+    amount: gold,
+    title: `Gold +${gold}`,
+    icon: "🪙",
+    rarity: "common",
+    desc: "More gold for the shop."
+  };
+}
+
+function playLuckySpinFx() {
+  const wheel = $("luckyWheel");
+  const machine = $("luckyMachine");
+  if (wheel) {
+    wheel.classList.remove("spinning");
+    void wheel.offsetWidth;
+    wheel.classList.add("spinning");
+  }
+  if (machine) {
+    machine.classList.remove("pulse");
+    void machine.offsetWidth;
+    machine.classList.add("pulse");
+  }
+  playSfx("sfxDraw", 0.85);
+}
+
+// 🎉 Confetti burst (used for legendary)
+function confettiBurst(intensity = 70) {
+  const host = document.createElement("div");
+  host.className = "confettiHost";
+  document.body.appendChild(host);
+
+  const count = Math.max(30, Math.min(140, Math.floor(intensity)));
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "confettiPiece";
+
+    // Random color without hardcoding a single theme
+    const hue = Math.floor(Math.random() * 360);
+    p.style.background = `hsl(${hue} 90% 60%)`;
+
+    const left = Math.random() * 100;
+    const x = (Math.random() * 260 - 130).toFixed(1) + "px";
+    const t = (1200 + Math.random() * 900).toFixed(0) + "ms";
+    const d = (Math.random() * 220).toFixed(0) + "ms";
+
+    p.style.left = left + "vw";
+    p.style.top = (-10 - Math.random() * 20) + "px";
+    p.style.setProperty("--x", x);
+    p.style.setProperty("--t", t);
+    p.style.setProperty("--d", d);
+    host.appendChild(p);
+  }
+
+  // Cleanup
+  setTimeout(() => {
+    try { host.remove(); } catch (e) {}
+  }, 2400);
+}
+
+function setLuckyModalProgress(idx, total) {
+  const prog = $("luckyProgress");
+  const pill = $("luckyProgressPill");
+  const text = $("luckyProgressText");
+  const strip = $("luckyMultiStrip");
+
+  const isMulti = total > 1;
+  if (prog) prog.style.display = isMulti ? "flex" : "none";
+  if (strip) strip.style.display = isMulti ? "grid" : "none";
+
+  if (!isMulti) return;
+
+  if (pill) pill.textContent = `${idx + 1} / ${total}`;
+  if (text) text.textContent = "Multi draw";
+
+  if (strip) {
+    const list = Array.isArray(state.luckyPendingRewards) ? state.luckyPendingRewards : [];
+    const revealed = Math.max(0, Math.min(total, idx)); // already-claimed
+    const cur = list[idx];
+    strip.innerHTML = "";
+    for (let i = 0; i < total; i++) {
+      const mini = document.createElement("div");
+      mini.className = "luckyMini";
+
+      const isRevealed = i < revealed;
+      const isCurrent = i === idx;
+
+      const r = isRevealed ? list[i] : (isCurrent ? cur : null);
+      if (isRevealed || isCurrent) {
+        mini.classList.add("revealed");
+        if (r?.rarity === "legendary") mini.classList.add("legendary");
+        mini.innerHTML = `<div class="luckyMiniIcon">${r?.icon || "✨"}</div>`;
+      } else {
+        mini.innerHTML = `<div class="luckyMiniIcon">❓</div>`;
+      }
+
+      strip.appendChild(mini);
+    }
+  }
+}
+
+function openLuckyModal(reward) {
+  const modal = $("luckyModal");
+  if (!modal) return;
+
+  const title = $("luckyModalTitle");
+  const pill = $("luckyModalPill");
+  const body = $("luckyRewardBody");
+  const hint = $("luckyModalHint");
+  const card = $("luckyCardReveal");
+  const name = $("luckyRewardName");
+  const rarityEl = $("luckyRewardRarity");
+
+  // Multi progress (1 / 5)
+  const list = Array.isArray(state.luckyPendingRewards) ? state.luckyPendingRewards : [];
+  const idx = Number(state.luckyPendingIndex || 0);
+  const total = Math.max(1, list.length || 1);
+  setLuckyModalProgress(idx, total);
+
+  if (title) title.textContent = reward?.title || "🎰 Lucky Draw";
+  if (pill) pill.textContent = reward?.rarity ? reward.rarity.toUpperCase() : "REWARD";
+
+  if (name) name.textContent = reward?.title || "Reward";
+  if (rarityEl) rarityEl.textContent = reward?.rarity ? reward.rarity.toUpperCase() : "COMMON";
+
+  if (body) {
+    body.innerHTML = `
+      <div class="luckyBigIcon">${reward?.icon || "✨"}</div>
+      <div class="luckyBigText">${reward?.title || "Reward"}</div>
+      <div class="muted" style="margin-top:8px;">${reward?.desc || ""}</div>
+    `;
+  }
+
+  if (hint) hint.textContent = "Tap Claim to add it to your account.";
+
+  modal.style.display = "flex";
+
+  // Flip-in animation every reveal
+  if (card) {
+    card.classList.remove("flipIn", "legendaryBurst");
+    void card.offsetWidth;
+    card.classList.add("flipIn");
+    if (reward?.rarity === "legendary") card.classList.add("legendaryBurst");
+  }
+
+  // Jackpot sound for legendary
+  if (reward?.rarity === "legendary") {
+    playSfx("sfxJackpot", 0.95);
+    // extra juice
+    const box = modal.querySelector(".modalBox");
+    if (box) {
+      box.classList.remove("luckyShake");
+      void box.offsetWidth;
+      box.classList.add("luckyShake");
+    }
+    confettiBurst(total > 1 ? 110 : 80);
+  }
+}
+
+function closeLuckyModal() {
+  const modal = $("luckyModal");
+  if (modal) modal.style.display = "none";
+}
+
+function applyLuckyReward(reward) {
+  if (!reward) return;
+
+  if (reward.type === "gold") {
+    addGold(reward.amount || 0);
+  } else if (reward.type === "card") {
+    state.owned[reward.id] = true;
+    // Track the Lucky Draw entity as unique
+    if (reward.id === "relicbornTitan") {
+      state.luckyEntityOwned = true;
+      try { localStorage.setItem(LUCKY_ENTITY_OWNED_KEY, "1"); } catch (e) {}
+    }
+    saveProgress();
+    updateGoldUI();
+    renderShopCards();
+    renderPick();
+    renderGallery();
+  }
+
+  // Record history
+  state.luckyHistory = Array.isArray(state.luckyHistory) ? state.luckyHistory : [];
+  state.luckyHistory.push(reward);
+  saveProgress();
+  renderLuckyDraw();
+}
+
+function doLuckyDraw(count) {
+  const n = (count === 5) ? 5 : 1;
+  const cost = (n === 5) ? LUCKY_DRAW.fiveCost : LUCKY_DRAW.singleCost;
+
+  if (state.gold < cost) {
+    alert(`Not enough gold. Need ${cost} gold.`);
+    return;
+  }
+
+  // Spend
+  state.gold -= cost;
+  saveProgress();
+  updateGoldUI();
+
+  // Disable buttons briefly to avoid double-spend
+  const b1 = $("btnLuckySingle");
+  const b5 = $("btnLuckyFive");
+  if (b1) b1.disabled = true;
+  if (b5) b5.disabled = true;
+
+  // Roll rewards now
+  state.luckyPendingRewards = [];
+  state.luckyPendingIndex = 0;
+  for (let i = 0; i < n; i++) state.luckyPendingRewards.push(rollLuckyReward());
+
+  playLuckySpinFx();
+
+  // Longer spin for 5x
+  const spinMs = (n === 5) ? 1050 : 650;
+
+  // Delay reveal for drama
+  setTimeout(() => {
+    const first = state.luckyPendingRewards[0];
+    openLuckyModal(first);
+    if (b1) b1.disabled = false;
+    if (b5) b5.disabled = false;
+  }, spinMs);
+}
+
+function claimNextLuckyReward() {
+  const list = Array.isArray(state.luckyPendingRewards) ? state.luckyPendingRewards : [];
+  const i = Number(state.luckyPendingIndex || 0);
+  const reward = list[i];
+  if (!reward) {
+    closeLuckyModal();
+    return;
+  }
+
+  applyLuckyReward(reward);
+
+  // Move to next reward (for 5x draws)
+  state.luckyPendingIndex = i + 1;
+  const next = list[state.luckyPendingIndex];
+  if (next) {
+    // Micro-transition between cards for a snappy multi-reveal
+    const card = $("luckyCardReveal");
+    if (card) {
+      card.classList.remove("flipIn");
+      void card.offsetWidth;
+    }
+    setTimeout(() => openLuckyModal(next), 140);
+  } else {
+    closeLuckyModal();
+  }
+}
 // =========================
 // START / RESET
 // =========================
@@ -1966,7 +2641,7 @@ function startGame(playerCardId) {
   }
 
   state.stage = 1;
-  state.relics = Object.keys(state.ownedRelics).filter((id) => state.ownedRelics[id]);
+  state.relics = state.equippedRelicId ? [state.equippedRelicId] : [];
 
   const playerBase = findCardById(playerCardId);
   const all = getGalleryCards();
@@ -2100,6 +2775,24 @@ safeOn("btnShopToBattle", () => { playSfx("sfxClick", 0.45); resetAll(); });
 safeOn("tabShopRelics", () => { playSfx("sfxClick", 0.35); setShopTab("relics"); });
 safeOn("tabShopCards", () => { playSfx("sfxClick", 0.35); setShopTab("cards"); });
 
+
+
+// Lucky Draw buttons
+safeOn("btnLuckySingle", () => { playSfx("sfxClick", 0.45); doLuckyDraw(1); });
+safeOn("btnLuckyFive", () => { playSfx("sfxClick", 0.45); doLuckyDraw(5); });
+safeOn("btnLuckyClaim", () => { playSfx("sfxBuy", 0.65); claimNextLuckyReward(); });
+safeOn("btnLuckyClose", () => { playSfx("sfxClick", 0.35); closeLuckyModal(); });
+
+safeOn("tabShopLucky", () => { playSfx("sfxClick", 0.35); setShopTab("lucky"); });
+
+
+
+// Close any open lore tooltips when clicking elsewhere
+function closeAllLoreTooltips() {
+  document.querySelectorAll('.infoWrap.showLore').forEach((w) => w.classList.remove('showLore'));
+}
+
+document.addEventListener('click', closeAllLoreTooltips);
 // =========================
 // INIT
 // =========================
