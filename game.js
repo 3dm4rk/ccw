@@ -92,7 +92,7 @@ function tryYrolPassive(defender, opts) {
 
 
 // =========================
-// 🎰 LUCKY LEGENDARY PASSIVE: Entity
+// 🎰 LUCKY LEGENDARY PASSIVE: Relicborn Titan
 // On defeating an enemy with a normal ATTACK, doubles ATK/DEF/MaxHP and doubles current HP (capped).
 // =========================
 function triggerRelicbornTitanOnKill(attacker, defender, opts) {
@@ -600,7 +600,7 @@ astroWitch: {
   // 🎰 Lucky Draw Legendary
   relicbornTitan: {
     id: "relicbornTitan",
-    name: "Entity",
+    name: "Relicborn Titan",
     img: "cards/entity.png",
     atk: 6,
     def: 5,
@@ -1403,7 +1403,7 @@ function applyDamage(defender, dmg, opts = {}) {
     state.lastHitSummary = `${inferredAttacker} ${srcLabel} • ${typeLabel} • ${parts.join(", ")}`;
   }
 
-  // Entity on-kill scaling (attack only)
+  // Relicborn Titan on-kill scaling (attack only)
   try { triggerRelicbornTitanOnKill(opts.attacker || null, defender, opts || {}); } catch (e) {}
 
   // Reflect relic
@@ -2363,7 +2363,7 @@ function rollLuckyReward() {
     return {
       type: "card",
       id: "relicbornTitan",
-      title: "LEGENDARY — Entity",
+      title: "LEGENDARY — Relicborn Titan",
       icon: "🌟",
       rarity: "legendary",
       desc: "6 Damage • 5 Armor • 5 Life • Passive: on kill, doubles stats • Ability: remove all armor + 50% 25/5 dmg."
