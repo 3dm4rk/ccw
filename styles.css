@@ -1076,6 +1076,245 @@ body{
   animation: reviveFlare 420ms ease-out forwards;
 }
 
+/* =========================
+   🏅 RANK UP ANIMATION
+   ========================= */
+
+.rankUpOverlay{
+  position: fixed;
+  inset: 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 20px;
+  z-index: 10000;
+  pointer-events:none;
+}
+
+.rankUpFlare{
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(900px 460px at 50% 50%, rgba(255,255,255,.18), transparent 60%),
+    radial-gradient(800px 420px at 35% 40%, rgba(255,210,125,.20), transparent 60%),
+    radial-gradient(900px 520px at 70% 55%, rgba(124,92,255,.18), transparent 60%),
+    linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.75));
+  backdrop-filter: blur(10px);
+  opacity: 0;
+}
+
+.rankUpCard{
+  position:relative;
+  width: min(560px, 100%);
+  border-radius: 24px;
+  border:1px solid rgba(255,255,255,.12);
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
+  box-shadow: 0 30px 120px rgba(0,0,0,.72);
+  overflow:hidden;
+  padding: 18px 18px 16px;
+  transform: translateY(16px) scale(.96);
+  opacity: 0;
+}
+
+.rankUpTop{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+.rankUpTitle{ font-weight: 1000; letter-spacing:.6px; font-size: 18px; }
+.rankUpSub{ color: rgba(233,238,255,.75); font-weight: 900; }
+
+.rankUpBadge{
+  margin-top: 14px;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.14);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,.22), rgba(255,255,255,.06)),
+    linear-gradient(135deg, rgba(255,210,125,.22), rgba(124,92,255,.16));
+  font-weight: 1000;
+  letter-spacing:.4px;
+  box-shadow: 0 0 0 2px rgba(255,210,125,.08) inset, 0 18px 60px rgba(0,0,0,.35);
+  transform: scale(.86);
+  opacity: .0;
+}
+
+.rankUpUnlocks{
+  margin-top: 12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.unlockPill{
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  color: rgba(233,238,255,.86);
+  font-weight: 900;
+  box-shadow: 0 10px 26px rgba(0,0,0,.32);
+}
+
+.rankUpHint{
+  margin-top: 12px;
+  color: rgba(255,210,125,.90);
+  font-weight: 900;
+}
+
+/* show animation */
+.rankUpOverlay.show .rankUpFlare{ animation: rankFlare 1.6s ease forwards; }
+.rankUpOverlay.show .rankUpCard{ animation: rankCardPop 1.6s ease forwards; }
+.rankUpOverlay.show .rankUpBadge{ animation: rankBadgePop 1.3s ease forwards; }
+
+@keyframes rankFlare{
+  0%{ opacity:0; }
+  10%{ opacity:1; }
+  75%{ opacity:1; }
+  100%{ opacity:0; }
+}
+
+@keyframes rankCardPop{
+  0%{ opacity:0; transform: translateY(18px) scale(.95); }
+  15%{ opacity:1; transform: translateY(0) scale(1.02); }
+  35%{ transform: translateY(0) scale(1); }
+  88%{ opacity:1; transform: translateY(0) scale(1); }
+  100%{ opacity:0; transform: translateY(10px) scale(.985); }
+}
+
+@keyframes rankBadgePop{
+  0%{ opacity:0; transform: scale(.70); }
+  18%{ opacity:1; transform: scale(1.10); }
+  36%{ transform: scale(1.0); }
+  90%{ opacity:1; }
+  100%{ opacity:0; }
+}
+
+/* =========================
+   🎨 COSMETICS UI
+   ========================= */
+
+.profileRight{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:10px;
+}
+
+.profileAvatar{
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display:grid;
+  place-items:center;
+  font-size: 26px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.04);
+  box-shadow: 0 16px 46px rgba(0,0,0,.45);
+}
+
+.cosmeticsSection{
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.10);
+}
+
+.cosmeticsHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.cosmeticsTitle{ margin:0; font-size:14px; font-weight: 1000; letter-spacing:.2px; }
+
+.cosmeticsBlock{ margin-top: 12px; }
+
+.cosmeticsGrid{
+  margin-top: 10px;
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.cosmeticItem{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.20);
+  border-radius: 18px;
+  padding: 12px;
+  cursor:pointer;
+  color: rgba(233,238,255,.86);
+  box-shadow: 0 12px 30px rgba(0,0,0,.30);
+  transition: transform .12s ease, border-color .12s ease, opacity .12s ease;
+}
+.cosmeticItem:hover{ transform: translateY(-1px); border-color: rgba(79,140,255,.28); }
+.cosmeticItem.selected{
+  border-color: rgba(125,255,178,.38);
+  box-shadow: 0 0 0 2px rgba(125,255,178,.10) inset, 0 14px 46px rgba(0,0,0,.35);
+}
+.cosmeticItem.locked{ opacity: .55; }
+
+.cosEmoji{ font-size: 26px; line-height:1; }
+.cosName{ margin-top: 8px; font-weight: 1000; font-size: 12px; letter-spacing:.2px; }
+.cosLock{ margin-top: 6px; font-size: 11px; font-weight: 900; color: rgba(255,210,125,.92); }
+
+.cosFrameSwatch{
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  box-shadow: 0 10px 24px rgba(0,0,0,.25);
+}
+.frameDefaultSwatch{ background: rgba(255,255,255,.05); }
+
+/* =========================
+   ✅ Profile cosmetics: remove "white box" look
+   ========================= */
+
+/* Avatar chip on Profile header */
+.profileAvatar{
+  background: transparent !important;
+  border-color: rgba(255,255,255,.10) !important;
+  box-shadow: 0 16px 46px rgba(0,0,0,.45);
+  position: relative;
+  overflow: hidden;
+}
+.profileAvatar::before{
+  content:"";
+  position:absolute; inset:0;
+  background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.06), rgba(0,0,0,.28) 70%);
+  pointer-events:none;
+}
+.profileAvatar > *{ position: relative; }
+
+/* Cosmetics previews (avatar + frame tiles) */
+.cosFrameSwatch,
+.frameDefaultSwatch{
+  background: rgba(0,0,0,.22) !important;
+  border-color: rgba(255,255,255,.10) !important;
+}
+
+/* In case avatar/frame previews use <img> tags, ensure no white BG */
+.profileAvatar img,
+.cosmeticsGrid img,
+.cosFrameSwatch img{
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  display: block;
+}
+
+/* =========================
+   🖼️ PLAYER FRAME STYLES
+   applied to #pFrame (.imgFrame)
+   ========================= */
+
+.imgFrame.frameBronze{ border-color: rgba(205,127,50,.38); box-shadow: 0 0 0 2px rgba(205,127,50,.14) inset, 0 0 40px rgba(205,127,50,.10); }
+.imgFrame.frameSilver{ border-color: rgba(220,220,240,.38); box-shadow: 0 0 0 2px rgba(220,220,240,.12) inset, 0 0 44px rgba(220,220,240,.10); }
+.imgFrame.frameGold{ border-color: rgba(255,210,125,.42); box-shadow: 0 0 0 2px rgba(255,210,125,.14) inset, 0 0 52px rgba(255,210,125,.12); }
+.imgFrame.framePlatinum{ border-color: rgba(170,220,255,.42); box-shadow: 0 0 0 2px rgba(170,220,255,.14) inset, 0 0 54px rgba(170,220,255,.12); }
+.imgFrame.frameDiamond{ border-color: rgba(180,255,248,.42); box-shadow: 0 0 0 2px rgba(180,255,248,.14) inset, 0 0 58px rgba(180,255,248,.14); }
+.imgFrame.frameMaster{ border-color: rgba(186,150,255,.46); box-shadow: 0 0 0 2px rgba(186,150,255,.16) inset, 0 0 62px rgba(186,150,255,.16); }
+.imgFrame.frameLegend{ border-color: rgba(255,255,255,.46); box-shadow: 0 0 0 2px rgba(255,255,255,.16) inset, 0 0 74px rgba(255,255,255,.18); }
+
+
 @keyframes reviveFlare{
   0%{ opacity: 0; }
   25%{ opacity: 1; }
@@ -1602,3 +1841,260 @@ body{
   background: rgba(0,0,0,.22);
   font-weight:1000;
 }
+
+/* =========================
+   🎨 COSMETICS UI
+   ========================= */
+
+.cosmeticsSection{
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid rgba(255,255,255,.10);
+}
+
+.cosmeticsHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.cosmeticsTitle{
+  margin:0;
+  font-size:15px;
+  font-weight:1000;
+  letter-spacing:.2px;
+}
+
+.cosmeticsBlock{
+  margin-top:12px;
+}
+
+.cosmeticsGrid{
+  margin-top:10px;
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap:10px;
+}
+
+.cosmeticItem{
+  padding:12px;
+  border-radius: 18px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.20);
+  cursor:pointer;
+  display:grid;
+  gap:6px;
+  align-items:center;
+  justify-items:center;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+}
+
+.cosmeticItem:hover{ transform: translateY(-1px); border-color: rgba(79,140,255,.28); }
+.cosmeticItem.selected{ border-color: rgba(125,255,178,.35); box-shadow: 0 0 0 2px rgba(125,255,178,.10) inset; }
+.cosmeticItem.locked{ opacity:.55; }
+
+.cosEmoji{
+  font-size: 28px;
+}
+
+.cosName{
+  font-size: 12px;
+  font-weight: 1000;
+  color: rgba(233,238,255,.86);
+  letter-spacing:.2px;
+}
+
+.cosLock{
+  font-size: 11px;
+  font-weight: 900;
+  color: rgba(255,210,125,.90);
+  text-align:center;
+}
+
+.cosFrameSwatch{
+  width: 58px;
+  height: 42px;
+  border-radius: 14px;
+  border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  box-shadow: 0 10px 26px rgba(0,0,0,.35);
+}
+
+.frameDefaultSwatch{ background: rgba(255,255,255,.05); }
+.frameBronze{ box-shadow: 0 0 0 2px rgba(205,127,50,.25) inset, 0 0 30px rgba(205,127,50,.12); border-color: rgba(205,127,50,.35) !important; }
+.frameSilver{ box-shadow: 0 0 0 2px rgba(200,200,220,.22) inset, 0 0 34px rgba(200,200,220,.12); border-color: rgba(200,200,220,.35) !important; }
+.frameGold{ box-shadow: 0 0 0 2px rgba(255,210,125,.28) inset, 0 0 40px rgba(255,210,125,.14); border-color: rgba(255,210,125,.40) !important; }
+.framePlatinum{ box-shadow: 0 0 0 2px rgba(180,255,250,.22) inset, 0 0 44px rgba(180,255,250,.12); border-color: rgba(180,255,250,.38) !important; }
+.frameDiamond{ box-shadow: 0 0 0 2px rgba(155,200,255,.22) inset, 0 0 52px rgba(155,200,255,.14); border-color: rgba(155,200,255,.42) !important; }
+.frameMaster{ box-shadow: 0 0 0 2px rgba(255,125,220,.18) inset, 0 0 60px rgba(255,125,220,.14); border-color: rgba(255,125,220,.35) !important; }
+.frameLegend{ box-shadow: 0 0 0 2px rgba(140,255,240,.20) inset, 0 0 80px rgba(124,92,255,.18), 0 0 130px rgba(79,140,255,.14); border-color: rgba(140,255,240,.45) !important; }
+
+/* swatches reuse the same "frameX" look */
+.cosFrameSwatch.frameBronze{ border-color: rgba(205,127,50,.45); box-shadow: 0 0 0 2px rgba(205,127,50,.25) inset, 0 0 30px rgba(205,127,50,.12); }
+.cosFrameSwatch.frameSilver{ border-color: rgba(200,200,220,.45); box-shadow: 0 0 0 2px rgba(200,200,220,.22) inset, 0 0 34px rgba(200,200,220,.12); }
+.cosFrameSwatch.frameGold{ border-color: rgba(255,210,125,.55); box-shadow: 0 0 0 2px rgba(255,210,125,.28) inset, 0 0 40px rgba(255,210,125,.14); }
+.cosFrameSwatch.framePlatinum{ border-color: rgba(180,255,250,.55); box-shadow: 0 0 0 2px rgba(180,255,250,.22) inset, 0 0 44px rgba(180,255,250,.12); }
+.cosFrameSwatch.frameDiamond{ border-color: rgba(155,200,255,.55); box-shadow: 0 0 0 2px rgba(155,200,255,.22) inset, 0 0 52px rgba(155,200,255,.14); }
+.cosFrameSwatch.frameMaster{ border-color: rgba(255,125,220,.50); box-shadow: 0 0 0 2px rgba(255,125,220,.18) inset, 0 0 60px rgba(255,125,220,.14); }
+.cosFrameSwatch.frameLegend{ border-color: rgba(140,255,240,.60); box-shadow: 0 0 0 2px rgba(140,255,240,.20) inset, 0 0 80px rgba(124,92,255,.18), 0 0 130px rgba(79,140,255,.14); }
+
+
+/* =========================
+   Rank System (cool + stable)
+   ========================= */
+
+/* Badge base (works even if existing styles differ) */
+#rankBadge,
+#rankUpBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Progress fill glow */
+#rankBarFill {
+  position: relative;
+}
+#rankBarFill::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  opacity: .0;
+  filter: blur(14px);
+  transition: opacity .25s ease;
+}
+
+/* Rank-up overlay pulse */
+#rankUpOverlay.rankUpShow {
+  animation: rankUpOverlayIn .45s ease-out both;
+}
+@keyframes rankUpOverlayIn {
+  from { transform: scale(.96); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* Flare layer for overlay */
+#rankUpOverlay::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.32), rgba(255,255,255,0) 55%);
+  opacity: .0;
+  transform: scale(.85);
+  filter: blur(10px);
+  pointer-events: none;
+}
+#rankUpOverlay.rankUpShow::before {
+  animation: rankFlare 1.1s ease-out both;
+}
+@keyframes rankFlare {
+  0%   { opacity: 0; transform: scale(.7) rotate(-8deg); }
+  20%  { opacity: .85; }
+  100% { opacity: 0; transform: scale(1.35) rotate(10deg); }
+}
+
+/* Badge pop */
+#rankUpBadge {
+  box-shadow: 0 0 0 rgba(255,255,255,0);
+}
+#rankUpOverlay.rankUpShow #rankUpBadge {
+  animation: badgePop .55s cubic-bezier(.2,1.6,.3,1) both;
+}
+@keyframes badgePop {
+  0%   { transform: scale(.6) rotate(-10deg); filter: blur(1px); }
+  55%  { transform: scale(1.2) rotate(2deg);  filter: blur(0); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+/* ===== Rank Themes ===== */
+.rankBadgeRookie { background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.06)); border: 1px solid rgba(255,255,255,.12); }
+.rankBadgeBronze { background: linear-gradient(135deg, rgba(205,127,50,.35), rgba(205,127,50,.12)); border: 1px solid rgba(205,127,50,.22); }
+.rankBadgeSilver { background: linear-gradient(135deg, rgba(190,190,205,.38), rgba(190,190,205,.12)); border: 1px solid rgba(190,190,205,.22); }
+.rankBadgeGold { background: linear-gradient(135deg, rgba(255,206,64,.40), rgba(255,206,64,.10)); border: 1px solid rgba(255,206,64,.22); }
+.rankBadgePlatinum { background: linear-gradient(135deg, rgba(120,255,220,.32), rgba(120,255,220,.10)); border: 1px solid rgba(120,255,220,.20); }
+.rankBadgeDiamond { background: linear-gradient(135deg, rgba(120,200,255,.34), rgba(120,200,255,.10)); border: 1px solid rgba(120,200,255,.20); }
+.rankBadgeMaster { background: linear-gradient(135deg, rgba(210,120,255,.34), rgba(210,120,255,.10)); border: 1px solid rgba(210,120,255,.20); }
+.rankBadgeLegend { background: linear-gradient(135deg, rgba(255,90,0,.42), rgba(255,220,120,.12)); border: 1px solid rgba(255,170,80,.26); }
+
+/* Rank fill glows */
+.rankGlowRookie { background: linear-gradient(90deg, rgba(255,255,255,.25), rgba(255,255,255,.08)); }
+.rankGlowBronze { background: linear-gradient(90deg, rgba(205,127,50,.55), rgba(205,127,50,.18)); }
+.rankGlowSilver { background: linear-gradient(90deg, rgba(200,200,210,.60), rgba(200,200,210,.18)); }
+.rankGlowGold { background: linear-gradient(90deg, rgba(255,206,64,.70), rgba(255,206,64,.20)); }
+.rankGlowPlatinum { background: linear-gradient(90deg, rgba(120,255,220,.55), rgba(120,255,220,.16)); }
+.rankGlowDiamond { background: linear-gradient(90deg, rgba(120,200,255,.58), rgba(120,200,255,.16)); }
+.rankGlowMaster { background: linear-gradient(90deg, rgba(210,120,255,.58), rgba(210,120,255,.16)); }
+.rankGlowLegend { background: linear-gradient(90deg, rgba(255,90,0,.70), rgba(255,220,120,.18)); }
+
+.rankGlowRookie::after { background: radial-gradient(circle, rgba(255,255,255,.45), rgba(255,255,255,0) 60%); opacity: .35; }
+.rankGlowBronze::after { background: radial-gradient(circle, rgba(205,127,50,.55), rgba(205,127,50,0) 62%); opacity: .45; }
+.rankGlowSilver::after { background: radial-gradient(circle, rgba(210,210,220,.60), rgba(210,210,220,0) 62%); opacity: .45; }
+.rankGlowGold::after { background: radial-gradient(circle, rgba(255,206,64,.70), rgba(255,206,64,0) 62%); opacity: .55; }
+.rankGlowPlatinum::after { background: radial-gradient(circle, rgba(120,255,220,.65), rgba(120,255,220,0) 62%); opacity: .55; }
+.rankGlowDiamond::after { background: radial-gradient(circle, rgba(120,200,255,.65), rgba(120,200,255,0) 62%); opacity: .55; }
+.rankGlowMaster::after { background: radial-gradient(circle, rgba(210,120,255,.65), rgba(210,120,255,0) 62%); opacity: .55; }
+.rankGlowLegend::after { background: radial-gradient(circle, rgba(255,120,20,.75), rgba(255,120,20,0) 62%); opacity: .65; }
+
+/* Rank flare variants (overlay) */
+.rankFlareRookie { }
+.rankFlareBronze { }
+.rankFlareSilver { }
+.rankFlareGold { }
+.rankFlarePlatinum { }
+.rankFlareDiamond { }
+.rankFlareMaster { }
+.rankFlareLegend { }
+
+/* Make the overlay flare slightly more intense for Legend */
+#rankUpOverlay.rankFlareLegend::before {
+  background: radial-gradient(circle at 50% 50%, rgba(255,160,60,.50), rgba(255,255,255,0) 55%);
+}
+
+/* =========================
+   Toast (top message)
+   ========================= */
+.toastTop{
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-18px) scale(.98);
+  z-index: 99999;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  background: rgba(10,10,14,.86);
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 2px rgba(255,255,255,.06) inset;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+}
+.toastTop.good{ border-color: rgba(120,255,200,.28); box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 2px rgba(120,255,200,.10) inset, 0 0 80px rgba(120,255,200,.10); }
+.toastTop.bad{ border-color: rgba(255,90,90,.30); box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 2px rgba(255,90,90,.10) inset, 0 0 80px rgba(255,90,90,.08); }
+.toastTop.info{ border-color: rgba(160,200,255,.26); box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 2px rgba(160,200,255,.08) inset, 0 0 80px rgba(160,200,255,.08); }
+
+.toastTop.show{
+  animation: toastIn .22s ease forwards;
+}
+.toastTop.hide{
+  animation: toastOut .24s ease forwards;
+}
+
+@keyframes toastIn{
+  from{ opacity: 0; transform: translateX(-50%) translateY(-18px) scale(.98); }
+  to{ opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes toastOut{
+  from{ opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  to{ opacity: 0; transform: translateX(-50%) translateY(-10px) scale(.98); }
+}
+
