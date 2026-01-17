@@ -101,7 +101,7 @@ function canGainArmor(f) {
 function gainShield(f, amount) {
   if (!f || amount <= 0) return 0;
   if (!canGainArmor(f)) return 0; // Time Lock blocks armor gain
-  const cap = getShieldCap();
+  const cap = getShieldCap(f);
   const before = f.shield;
   f.shield = Math.min(cap, f.shield + amount);
   // ✅ Keep DEF and Shield the same (requested). DEF is treated as the live defense value.
@@ -112,6 +112,20 @@ function gainShield(f, amount) {
 // ✅ Reboot Seal: blocks healing
 function canHeal(f) {
   return !(f && f.rebootSeal && f.rebootSeal > 0);
+}
+
+// =========================
+// 🎲 RNG helper
+// Used by abilities that roll random damage (e.g., Ray Bill 100–300).
+// If this is missing, clicking "Use Skill" can throw ReferenceError and appear to do nothing.
+// =========================
+function randInt(min, max) {
+  const a = Number(min);
+  const b = Number(max);
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return 0;
+  return Math.floor(Math.random() * (hi - lo + 1)) + lo;
 }
 
 
@@ -143,6 +157,25 @@ function formatSkillCd(f) {
 }
 
 // =========================
+// 🧪 POTION HELPERS (global 10-turn cooldown)
+// =========================
+const POTION_COOLDOWN_TURNS = 10;
+
+function isPotionReady() {
+  return (Number(state.potionCooldownTurns || 0) || 0) <= 0;
+}
+
+function formatPotionCd() {
+  const t = Number(state.potionCooldownTurns || 0) || 0;
+  return t > 0 ? `${t} turns` : "Ready";
+}
+
+function setPotionCooldown() {
+  state.potionCooldownTurns = POTION_COOLDOWN_TURNS;
+  saveProgress();
+}
+
+// =========================
 // ✅ SILENCE STATUS
 // =========================
 function isSilenced(f) {
@@ -169,12 +202,51 @@ function tryYrolPassive(defender, opts) {
   defender.hp = Math.min(defender.maxHp, oldHp * 2);
 
   // Shield: double current shield but respect cap
-  defender.shield = Math.min(getShieldCap(), defender.shield * 2);
+  defender.shield = Math.min(getShieldCap(defender), defender.shield * 2);
 
   defender.passiveCdUntil = now + 5 * 60 * 1000;
 
   log(`⭐ Yrol's passive triggers! Hit by an ability → stats doubled! (5 min CD)`, "good");
   floatingDamage(defender === state.player ? "player" : "enemy", "⭐ x2", "good");
+  updateUI();
+}
+
+
+// =========================
+// 🌌 SECRET PASSIVE: COSMO (Gods Vision)
+// Passive: Whenever Cosmo Secret is attacked, reflect the incoming damage back to the attacker,
+// and convert the received damage into Life + Armor for Cosmo.
+// =========================
+function tryCosmoGodsVision(defender, attacker, dmg, opts) {
+  if (!defender || defender.id !== "cosmoSecret") return;
+  if (!attacker) return;
+
+  const incoming = Math.max(0, Number(dmg || 0) || 0);
+  if (incoming <= 0) return;
+
+  // Prevent loops / self-reflect
+  if (opts && opts._cosmoReflect === true) return;
+
+  // Convert damage into Life + Armor
+  const healBlocked = !canHeal(defender);
+  if (!healBlocked) defender.hp = Math.min(defender.maxHp, defender.hp + incoming);
+
+  // Gain armor (respects cap / Time Lock)
+  gainShield(defender, incoming);
+
+  // Reflect back as TRUE damage so armor does not absorb reflection
+  applyDamage(attacker, incoming, {
+    silent: true,
+    source: "passive",
+    damageType: "true",
+    attackerName: defender.name,
+    attacker: defender,
+    _cosmoReflect: true
+  });
+
+  log(`🌌 Gods Vision triggers! ${defender.name} reflects ${incoming} damage back to ${attacker.name}.`, "good");
+  floatingDamage(defender === state.player ? "player" : "enemy", `↩️ +${incoming}`, "good");
+  floatingDamage(attacker === state.player ? "player" : "enemy", `-${incoming}`, "bad");
   updateUI();
 }
 
@@ -210,14 +282,17 @@ function triggerRelicbornTitanOnKill(attacker, defender, opts) {
 
   // Permanent stat growth
   attacker.atk = Math.max(0, Number(attacker.atk || 0)) + 6;
-  attacker.def = Math.max(0, Number(attacker.def || 0)) + 5;
+  attacker.shieldCap = Math.max(0, Number(attacker.shieldCap || attacker.shield || attacker.def || 0)) + 5;
 
   // Health: increase max HP and heal +5 (capped)
   attacker.maxHp = Math.max(1, Number(attacker.maxHp || 1)) + 5;
   attacker.hp = Math.min(attacker.maxHp, Math.max(0, Number(attacker.hp || 0)) + 5);
 
   // Armor: also grant +5 current armor (shield), respecting cap
-  attacker.shield = Math.min(getShieldCap(), Math.max(0, Number(attacker.shield || 0)) + 5);
+  attacker.shield = Math.min(getShieldCap(attacker), Math.max(0, Number(attacker.shield || 0)) + 5);
+
+  // Keep DEF (displayed armor) in sync with current shield
+  attacker.def = attacker.shield;
 
   attacker.titanKillCd = 3;
 
@@ -772,7 +847,7 @@ astroWitch: {
     def: 5,
     hp: 5,
     skillName: "Armor Break Roulette",
-    skillDesc: "Remove ALL enemy armor, then 50% chance to deal 25 damage, otherwise 5 damage. (CD 3) Passive: On ability kill, permanently gain +6 DMG, +5 Armor, +5 Life (CD 3).",
+    skillDesc: "Remove ALL enemy armor, then 50% chance to deal 25 damage, otherwise 5 damage. (CD 1) Passive: On ability kill, permanently gain +6 DMG, +5 Armor, +5 Life (CD 3).",
     skill: (me, foe) => {
       if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
 
@@ -783,7 +858,7 @@ astroWitch: {
       const dmg = big ? 25 : 5;
       applyDamage(foe, dmg, { silent: true, source: "skill", attacker: me, attackerName: me.name });
 
-      me.cooldown = 3;
+      me.cooldown = 1;
       updateUI();
       return { ok: true, msg: `${me.name} shatters armor (-${removed}) and rolls ${big ? "CRITICAL" : "Normal"}! ${dmg} damage.` };
     }
@@ -896,23 +971,98 @@ astroWitch: {
     id: "cosmoSecret",
     name: "Cosmo Secret",
     img: "cards/cosmo-secret.png",
-    atk: 12,
-    def: 6,
-    hp: 18,
+    atk: 50,
+    def: 40,
+    hp: 100,
     secret: true,
-    skillName: "Cosmo Revelation",
-    skillDesc: "Deal 10 damage, gain +5 Armor, heal 5 HP. (CD 3)",
+    skillName: "Gods Vision",
+    skillDesc: "Passive: Whenever someone attacks this card, it reflects the damage back to them. Damage received is converted into Life + Armor for Cosmo.",
     skill: (me, foe) => {
-      if (me.cooldown > 0) return { ok: false, msg: 'Skill is on cooldown (' + me.cooldown + ' turns).' };
-      applyDamage(foe, 10, { silent: true, source: 'skill', });
-      const gained = gainShield(me, 5);
-      if (canHeal(me)) me.hp = Math.min(me.maxHp, me.hp + 5);
-      me.cooldown = 3;
-      return { ok: true, msg: me.name + " reveals Cosmo's secret! 10 dmg, +" + gained + " Armor, healed 5." };
+      return { ok: false, msg: "Gods Vision is passive. (Triggers when attacked.)" };
     }
   },
 
-  // 🔥 LEGEND REWARD (not buyable) — unlocked automatically upon reaching Rank: Legend
+  
+  // ⚡ OMEN REWARD (not buyable) — revealed after defeating Cosmo Secret
+
+  // ⚡ OMEN REWARD (not buyable) — revealed after defeating Cosmo Secret
+  rayBill: {
+    id: "rayBill",
+    name: "Ray Bill",
+    img: "cards/ray-bill.png",
+    atk: 8,
+    def: 8,
+    hp: 5,
+    secret: true,
+    skillName: "Summon Thor's Ungodly Power",
+    skillDesc: "Throws random 100–300 burst TRUE magic damage (penetrates armor). Converts generated damage into Damage + HP + Armor (NOT stackable). (Cooldown: 5 turns)",
+    skill: (me, foe) => {
+      if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
+
+      const roll = randInt(100, 300);
+
+      // TRUE magic damage: bypass armor
+      applyDamage(foe, roll, {
+        silent: true,
+        source: "skill",
+        damageType: "true",
+        attacker: me,
+        attackerName: me.name
+      });
+
+      // ✅ NON-STACKABLE CONVERT:
+      // The rolled number becomes Ray Bill's bonus Damage/HP/Armor for this battle,
+      // but it does NOT accumulate across multiple casts.
+      // We keep original stats once, then re-apply from that baseline each cast.
+      if (me._rbBaseAtk == null) {
+        me._rbBaseAtk = Number(me.atk || 0) || 0;
+        me._rbBaseMaxHp = Number(me.maxHp || 1) || 1;
+        me._rbBaseShield = Number(me.shield || 0) || 0;
+        me._rbBaseShieldCap = Number(me.shieldCap || me._rbBaseShield || 0) || 0;
+      }
+
+      // Damage becomes (base + roll) — NOT stackable (overwrites previous roll bonus)
+      me.atk = me._rbBaseAtk + roll;
+
+      // HP becomes (base + roll) — NOT stackable (overwrites previous roll bonus)
+      const healBlocked = !canHeal(me);
+      me.maxHp = me._rbBaseMaxHp + roll;
+      if (!healBlocked) {
+        // convert into life: set to full new max HP
+        me.hp = me.maxHp;
+      } else {
+        // still clamp current HP to new max
+        me.hp = Math.min(me.maxHp, Number(me.hp || 0) || 0);
+      }
+
+      // Armor/DEF becomes (base + roll) — NOT stackable, and must scale with roll.
+      // IMPORTANT: Ray Bill's conversion should show the rolled number on DEF.
+      // Some effects (e.g., Time Lock) block "armor gain" via gainShield();
+      // but Ray Bill's skill SETS armor directly (non-stackable overwrite), so we
+      // still apply it even if canGainArmor() is false.
+      const armorBlocked = !canGainArmor(me);
+      const before = Number(me.shield || 0) || 0;
+
+      // Ensure the cap can display the full rolled armor amount (otherwise UI may clamp to 6/8).
+      me.shieldCap = me._rbBaseShieldCap + roll;
+      me.shield = me._rbBaseShield + roll;
+      me.def = me.shield; // UI reads DEF from f.def
+
+      const gained = Math.max(0, me.shield - before);
+
+      me.cooldown = 5;
+      updateUI();
+
+      return {
+        ok: true,
+        msg: `⚡ ${me.name} summons Thor's ungodly power! ${roll} TRUE damage. Damage set to ${me.atk}. ` +
+             `${healBlocked ? "Healing blocked" : `HP set to ${me.hp}/${me.maxHp}`}. ` +
+             `Armor/DEF set to ${me.shield}${armorBlocked ? " (ignored Time Lock)" : ""}.`
+      };
+    }
+  },
+
+
   diablo: {
     id: "diablo",
     name: "Diablo",
@@ -1119,6 +1269,51 @@ const RELICS = [
 ];
 
 // =========================
+// 🧪 POTIONS (shop + in-battle use)
+// =========================
+// NOTE: Prices are intentionally high (as requested) and are saved in your account inventory.
+const POTIONS = [
+  {
+    id: "potionHealth",
+    name: "Potion of Health",
+    price: 120000,
+    desc: "Fully restores your HP. (Potion cooldown: 10 turns)",
+    effect: "hp"
+  },
+  {
+    id: "potionArmor",
+    name: "Potion of Armor",
+    price: 150000,
+    desc: "Fully restores your armor/defense. (Potion cooldown: 10 turns)",
+    effect: "armor"
+  },
+  {
+    id: "potionEndurance",
+    name: "Potion of Endurance",
+    price: 250000,
+    desc: "Reduces your ability cooldown by 1. (Potion cooldown: 10 turns)",
+    effect: "endurance"
+  },
+  {
+    id: "potionTwilight",
+    name: "Potion of Twilight",
+    price: 300000,
+    desc: "Fully restores your HP and armor. (Potion cooldown: 10 turns)",
+    effect: "twilight"
+  },
+  {
+    id: "potionGalacticWanderer",
+    name: "Potion of Halactic Wonderer",
+    price: 500000,
+    desc: "Fully restores HP + armor and reduces ability cooldown by 1. (Potion cooldown: 10 turns)",
+    effect: "galactic"
+  }
+];
+
+// (old real-time potion cooldown removed)
+// const POTION_COOLDOWN_MS = 3 * 60 * 1000;
+
+// =========================
 // 🎰 LUCKY DRAW (Gacha)
 // =========================
 const LUCKY_DRAW = {
@@ -1139,6 +1334,11 @@ const OWNED_KEY = "cb_owned";
 const RELIC_OWNED_KEY = "cb_owned_relics";
 const RELIC_EQUIPPED_KEY = "cb_equipped_relic";
 
+// --- Potions ---
+const POTION_OWNED_KEY = "cb_owned_potions_v1";
+// ✅ Turn-based global potion cooldown (10 turns)
+const POTION_COOLDOWN_KEY = "cb_potion_cd_turns_v1";
+
 // --- Lucky Draw ---
 const LUCKY_ENTITY_OWNED_KEY = "cb_lucky_entity_owned";
 const LUCKY_HISTORY_KEY = "cb_lucky_history";
@@ -1148,6 +1348,9 @@ const STREAK_KEY = "cb_win_streak_v2";
 
 // --- Card Upgrades ---
 const CARD_UPGRADES_KEY = "cb_card_upgrades_v1";
+
+// --- Missions ---
+const MISSION_KEY = "cb_missions_v1";
 
 // --- Redeem Codes ---
 // Stores a map of redeemed codes so the same code can't be claimed twice.
@@ -1163,18 +1366,34 @@ const state = {
   stage: 1,
   gold: 0,
   owned: {},
+
+  // ✅ Missions (text only on Home)
+  missions: {
+    totalDefeats: 0,
+    cosmoRevelationDefeated: false,
+    diabloDefeated: false,
+    entityDefeated: false,
+  },
   ownedRelics: {},
   relics: [],
   equippedRelicId: null,
+
+  // Potions: inventory counts + global potion cooldown (turn-based)
+  ownedPotions: {},
+  potionCooldownTurns: 0,
+
   luckyEntityOwned: false,
   winStreak: 0,
   bestStreak: 0,
   cardUpgrades: {},
   player: null,
   enemy: null,
+  // One-time omen popup when Cosmo Secret is defeated
+  rayBillOmenShown: false,
   // Last damage/ability line that affected the PLAYER (shown on defeat)
   lastHitSummary: "",
-  lastAction: ""
+  lastAction: "",
+  cosmoOmenShown: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1203,6 +1422,124 @@ window.__cardPlaceholder = function (name = "Card") {
 </svg>`;
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 };
+
+
+
+// =========================
+// ☠️ COSMO OMEN MODAL (Ray Bill reveal)
+// Triggered when the player defeats Cosmo Secret.
+// =========================
+function showCosmoOmenModal() {
+  if (document.getElementById("cosmoOmenOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modalOverlay";
+  overlay.id = "cosmoOmenOverlay";
+
+  const box = document.createElement("div");
+  box.className = "modalBox omenModalBox";
+
+  const header = document.createElement("div");
+  header.className = "modalHeader";
+
+  const title = document.createElement("div");
+  title.className = "modalTitle";
+  title.textContent = "⚔️ The End is Near";
+
+  const pill = document.createElement("div");
+  pill.className = "modalPill";
+  pill.textContent = "OMEN REVEALED";
+
+  header.appendChild(title);
+  header.appendChild(pill);
+
+  const body = document.createElement("div");
+  body.className = "modalBody";
+
+  const p = document.createElement("p");
+  p.className = "modalText";
+  p.innerHTML = "<b>The end is near</b> — and war is about to begin.";
+
+  const card = {
+    name: "Ray Bill",
+    img: "cards/ray-bill.png",
+    atk: 8,
+    def: 8,
+    hp: 5,
+    skillName: "Summon Thor's Ungodly Power",
+    skillDesc: "Throws random 100–300 burst TRUE magic damage (penetrates armor). Converts generated damage into HP + Armor. (Cooldown: 5 turns)",
+    lore: "Ray Bill was a nameless drifter until he found a broken shard of thunder sealed inside a dying star. The shard didn’t grant him lightning—it granted him a debt. Every time he calls the storm, the heavens remember, and the sky opens like a wound. He walks ahead of wars, carrying a prophecy in his bones: when the God of All Gods rises, only thunder can drown the final hymn."
+  };
+
+  const wrap = document.createElement("div");
+  wrap.className = "omenCardWrap";
+
+  const img = document.createElement("img");
+  img.className = "omenCardImg";
+  img.src = card.img;
+  img.alt = card.name;
+  img.onerror = function () {
+    this.onerror = null;
+    this.src = window.__cardPlaceholder(card.name);
+  };
+
+  const stats = document.createElement("div");
+  stats.className = "modalStats";
+  stats.innerHTML = `
+    <div class="modalStat"><div class="modalStatLabel">Damage</div><div class="modalStatValue">${card.atk}</div></div>
+    <div class="modalStat"><div class="modalStatLabel">Defense</div><div class="modalStatValue">${card.def}</div></div>
+    <div class="modalStat"><div class="modalStatLabel">Life</div><div class="modalStatValue">${card.hp}</div></div>
+    <div class="modalStat"><div class="modalStatLabel">Ability</div><div class="modalStatValue" style="font-size:14px;line-height:1.2;">${card.skillName}</div></div>
+  `;
+
+  const hint = document.createElement("div");
+  hint.className = "modalHint";
+  hint.textContent = "⚡ 100–300 TRUE magic • 5-turn cooldown • converts damage → HP + Armor";
+
+  const lore = document.createElement("div");
+  lore.className = "omenLore";
+  lore.textContent = card.lore;
+
+  wrap.appendChild(img);
+  wrap.appendChild(stats);
+  wrap.appendChild(hint);
+  wrap.appendChild(lore);
+
+  body.appendChild(p);
+  body.appendChild(wrap);
+
+  const actions = document.createElement("div");
+  actions.className = "modalActions single omenActions";
+
+  const btn = document.createElement("button");
+  btn.className = "btn btnPrimary";
+  btn.textContent = "Prepare";
+  btn.addEventListener("click", () => {
+    // ✅ Unlock Ray Bill permanently
+    if (!state.owned) state.owned = {};
+    state.owned["rayBill"] = true;
+    state.rayBillOmenShown = true;
+    try { saveProgress(); } catch(e) {}
+    // Refresh UI so Ray Bill is usable immediately
+    try { if (typeof renderPick === "function") renderPick(); } catch(e) {}
+    try { if (typeof renderGallery === "function") renderGallery(); } catch(e) {}
+    try { if (typeof renderShopCards === "function") renderShopCards(); } catch(e) {}
+    try { if (typeof log === "function") log("⚡ Ray Bill unlocked! Go to Setup/Pick to use him.", "good"); } catch(e) {}
+    overlay.remove();
+  });
+actions.appendChild(btn);
+
+  box.appendChild(header);
+  box.appendChild(body);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
 
 // =========================
 // ✅ SOUND SYSTEM
@@ -1246,8 +1583,10 @@ function hasRelic(id) {
   // Robust: treat equippedRelicId as the single source of truth
   return String(state.equippedRelicId || "") === String(id);
 }
-function getShieldCap() {
-  return hasRelic("reinforcedPlating") ? 8 : 6;
+function getShieldCap(f) {
+  const base = hasRelic("reinforcedPlating") ? 8 : 6;
+  const personal = f ? Number(f.shieldCap || 0) : 0;
+  return Math.max(base, Number.isFinite(personal) ? personal : 0);
 }
 
 function equipRelic(id) {
@@ -1258,8 +1597,14 @@ function equipRelic(id) {
   state.relics = [id];
 
   // Clamp shields if cap changed
-  if (state.player) state.player.shield = Math.min(getShieldCap(), state.player.shield);
-  if (state.enemy) state.enemy.shield = Math.min(getShieldCap(), state.enemy.shield);
+  if (state.player) {
+    state.player.shield = Math.min(getShieldCap(state.player), state.player.shield);
+    state.player.def = state.player.shield;
+  }
+  if (state.enemy) {
+    state.enemy.shield = Math.min(getShieldCap(state.enemy), state.enemy.shield);
+    state.enemy.def = state.enemy.shield;
+  }
 
   saveProgress();
   updateUI();
@@ -1278,38 +1623,56 @@ function equipRelic(id) {
 function setShopTab(tab) {
   const relicWrap = $("shopRelicsWrap");
   const cardWrap = $("shopCardsWrap");
+  const potionWrap = $("shopPotionsWrap");
   const luckyWrap = $("shopLuckyWrap");
   const bRelics = $("tabShopRelics");
   const bCards = $("tabShopCards");
+  const bPotions = $("tabShopPotions");
   const bLucky = $("tabShopLucky");
 
   // If shop UI isn't present yet, just bail safely.
-  if (!relicWrap || !cardWrap || !luckyWrap || !bRelics || !bCards || !bLucky) return;
+  if (!relicWrap || !cardWrap || !potionWrap || !luckyWrap || !bRelics || !bCards || !bPotions || !bLucky) return;
 
   if (tab === "relics") {
     relicWrap.style.display = "block";
     cardWrap.style.display = "none";
+    potionWrap.style.display = "none";
     luckyWrap.style.display = "none";
     bRelics.classList.add("tabActive");
     bCards.classList.remove("tabActive");
+    bPotions.classList.remove("tabActive");
     bLucky.classList.remove("tabActive");
     // Make sure list is fresh.
     renderShopRelics();
   } else if (tab === "cards") {
     relicWrap.style.display = "none";
     cardWrap.style.display = "block";
+    potionWrap.style.display = "none";
     luckyWrap.style.display = "none";
     bRelics.classList.remove("tabActive");
     bCards.classList.add("tabActive");
+    bPotions.classList.remove("tabActive");
     bLucky.classList.remove("tabActive");
     renderShopCards();
+  } else if (tab === "potions") {
+    relicWrap.style.display = "none";
+    cardWrap.style.display = "none";
+    potionWrap.style.display = "block";
+    luckyWrap.style.display = "none";
+    bRelics.classList.remove("tabActive");
+    bCards.classList.remove("tabActive");
+    bPotions.classList.add("tabActive");
+    bLucky.classList.remove("tabActive");
+    renderShopPotions();
   } else {
     // lucky
     relicWrap.style.display = "none";
     cardWrap.style.display = "none";
+    potionWrap.style.display = "none";
     luckyWrap.style.display = "block";
     bRelics.classList.remove("tabActive");
     bCards.classList.remove("tabActive");
+    bPotions.classList.remove("tabActive");
     bLucky.classList.add("tabActive");
     if (typeof renderLuckyDraw === "function") renderLuckyDraw();
   }
@@ -1379,7 +1742,9 @@ function renderShopCards() {
     const btnDisabled = owned || !canBuy;
 
     const upgradeBtnHtml = owned
-      ? `<button class="btn btnSoft" ${canUp ? "" : "disabled"} title="${escAttr(upgradeTip)}" data-upgrade-card-id="${item.id}">⬆️ Upgrade</button>`
+      ? `<button class="btn btnUpgrade" ${canUp ? "" : "disabled"} title="${escAttr(upgradeTip)}" data-upgrade-card-id="${item.id}">
+      ⬆️ Upgrade
+     </button>`
       : ``;
 
     div.innerHTML = `
@@ -1542,9 +1907,81 @@ function buyRelic(id) {
   alert(`Purchased & Equipped: ${r.name} ✅`);
 }
 
+// =========================
+// SHOP (Potions)
+// =========================
+function getPotionCount(id) {
+  return Math.max(0, Number((state.ownedPotions || {})[id] || 0) || 0);
+}
+
+function addPotion(id, qty = 1) {
+  const q = Math.max(1, Number(qty || 1) || 1);
+  if (!state.ownedPotions) state.ownedPotions = {};
+  state.ownedPotions[id] = getPotionCount(id) + q;
+  saveProgress();
+}
+
+function buyPotion(id) {
+  const p = (POTIONS || []).find((x) => x.id === id);
+  if (!p) return;
+  if (state.gold < p.price) return;
+
+  state.gold -= p.price;
+  addPotion(id, 1);
+  updateGoldUI();
+  renderShopPotions();
+  playSfx("sfxBuy", 0.85);
+
+  if (state.phase === "battle") {
+    if (typeof log === "function") log(`🧪 Purchased potion: ${p.name}`, "good");
+  }
+
+  alert(`Purchased: ${p.name} ✅\nYou can use it in battle (🧪 Use Potion).`);
+}
+
+function renderShopPotions() {
+  const grid = $("shopPotionGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  (POTIONS || []).forEach((p) => {
+    const ownedQty = getPotionCount(p.id);
+    const canBuy = state.gold >= p.price;
+
+    const div = document.createElement("div");
+    div.className = "shopItem";
+    div.innerHTML = `
+      <div class="shopItemTop">
+        <div>
+          <h3 class="shopName">🧪 ${p.name}</h3>
+          <div class="shopMeta">
+            <span class="badge">Price: ${p.price} Gold</span>
+            <span class="badge ${ownedQty > 0 ? "badgeOwned" : ""}">${ownedQty > 0 ? `Owned: ${ownedQty}` : "Not owned"}</span>
+          </div>
+        </div>
+      </div>
+      <p class="shopDesc">${p.desc}</p>
+      <div class="shopActions">
+        <button class="btn btnPrimary" ${canBuy ? "" : "disabled"} data-potion-buy-id="${p.id}">${canBuy ? "Buy" : "Not Enough Gold"}</button>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+
+  grid.querySelectorAll("button[data-potion-buy-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      playSfx("sfxClick", 0.45);
+      const id = btn.getAttribute("data-potion-buy-id");
+      if (!id) return;
+      buyPotion(id);
+    });
+  });
+}
+
 function renderShop() {
   renderShopRelics();
   renderShopCards();
+  renderShopPotions();
 }
 
 // Keep Redeem Code button from crashing if this feature isn't wired yet.
@@ -1646,6 +2083,50 @@ function redeemCodeFlow() {
 function closeRedeemRevealModal() {
   const modal = document.getElementById("redeemRevealModal");
   if (modal) modal.style.display = "none";
+}
+
+// =========================
+// 🌌 COSMO REVELATION UNLOCK MODAL
+// =========================
+function closeCosmoRevealModal() {
+  const modal = document.getElementById("cosmoRevealModal");
+  if (modal) modal.style.display = "none";
+}
+
+function showCosmoRevealModal() {
+  const modal = document.getElementById("cosmoRevealModal");
+  if (!modal) {
+    // Fallback (if HTML was removed)
+    alert("🌌 COSMO REVELATION\n\nA forbidden page of the cosmos has been revealed…");
+    return;
+  }
+
+  const card = (typeof findCardById === "function") ? findCardById("cosmoSecret") : (CARDS?.cosmoSecret || null);
+  const img = document.getElementById("cosmoRevealImg");
+  const lore = document.getElementById("cosmoRevealLore");
+  const txt = document.getElementById("cosmoRevealText");
+
+  if (img) {
+    img.src = card?.img || "cards/cosmo-secret.png";
+    img.alt = card?.name || "Cosmo Secret";
+    img.onerror = () => { img.onerror = null; img.src = window.__cardPlaceholder(card?.name || "Cosmo Secret"); };
+  }
+
+  if (txt) {
+    txt.textContent = "You unlocked a secret card… but the universe just noticed you.";
+  }
+
+  if (lore) {
+    lore.textContent =
+`The Revelation speaks of a war that will break the sky itself.
+
+When the *God of All Gods* awakens, every realm will choose a side — Glory… or Oblivion.
+
+Cosmo is not just a fighter. Cosmo is a KEY.
+And now… the key is in your hands.`;
+  }
+
+  modal.style.display = "flex";
 }
 
 function showRedeemRevealModal(cardId, code, alreadyOwned) {
@@ -1760,6 +2241,19 @@ function loadProgress() {
   try { state.owned = JSON.parse(localStorage.getItem(OWNED_KEY) || "{}") || {}; }
   catch { state.owned = {}; }
 
+  // ---- Missions ----
+  try {
+    const raw = localStorage.getItem(MISSION_KEY);
+    const m = raw ? (JSON.parse(raw) || {}) : {};
+    if (!state.missions) state.missions = {};
+    state.missions.totalDefeats = Math.max(0, Number(m.totalDefeats || state.missions.totalDefeats || 0) || 0);
+    state.missions.cosmoRevelationDefeated = !!(m.cosmoRevelationDefeated ?? state.missions.cosmoRevelationDefeated);
+    state.missions.diabloDefeated = !!(m.diabloDefeated ?? state.missions.diabloDefeated);
+    state.missions.entityDefeated = !!(m.entityDefeated ?? state.missions.entityDefeated);
+  } catch {
+    // keep defaults
+  }
+
   // ---- Relics (owned + equipped) ----
   let ownedRaw;
   try { ownedRaw = JSON.parse(localStorage.getItem(RELIC_OWNED_KEY) || "{}") || {}; }
@@ -1798,6 +2292,28 @@ function loadProgress() {
   // Final sanity: if equipped relic is not actually owned anymore, clear it
   if (state.equippedRelicId && !state.ownedRelics[state.equippedRelicId]) {
     state.equippedRelicId = null;
+  }
+
+  // ---- Potions (owned inventory + cooldown) ----
+  try {
+    const raw = localStorage.getItem(POTION_OWNED_KEY);
+    const obj = raw ? (JSON.parse(raw) || {}) : {};
+    // migration: allow array => {id:1}
+    if (Array.isArray(obj)) {
+      state.ownedPotions = {};
+      for (const id of obj) state.ownedPotions[String(id)] = (state.ownedPotions[String(id)] || 0) + 1;
+    } else {
+      state.ownedPotions = obj;
+    }
+  } catch {
+    state.ownedPotions = {};
+  }
+
+  try {
+    const t = Number(localStorage.getItem(POTION_COOLDOWN_KEY) || "0") || 0;
+    state.potionCooldownTurns = Math.max(0, Number.isFinite(t) ? t : 0);
+  } catch {
+    state.potionCooldownTurns = 0;
   }
 
   // ---- Lucky Draw ----
@@ -1869,8 +2385,11 @@ function loadProgress() {
 function saveProgress() {
   localStorage.setItem(GOLD_KEY, String(state.gold));
   localStorage.setItem(OWNED_KEY, JSON.stringify(state.owned));
+  localStorage.setItem(MISSION_KEY, JSON.stringify(state.missions || {}));
   localStorage.setItem(RELIC_OWNED_KEY, JSON.stringify(state.ownedRelics));
   localStorage.setItem(RELIC_EQUIPPED_KEY, state.equippedRelicId || "");
+  localStorage.setItem(POTION_OWNED_KEY, JSON.stringify(state.ownedPotions || {}));
+  localStorage.setItem(POTION_COOLDOWN_KEY, String(Math.max(0, Number(state.potionCooldownTurns || 0) || 0)));
   localStorage.setItem(LUCKY_HISTORY_KEY, JSON.stringify(state.luckyHistory || []));
   localStorage.setItem(STREAK_KEY, JSON.stringify({ winStreak: Number(state.winStreak || 0), bestStreak: Number(state.bestStreak || 0) }));
   localStorage.setItem(CARD_UPGRADES_KEY, JSON.stringify(state.cardUpgrades || {}));
@@ -1889,6 +2408,23 @@ localStorage.setItem(LUCKY_ENTITY_OWNED_KEY, state.luckyEntityOwned ? "1" : "0")
     diabloClaimed: !!state.diabloClaimed,
   }));
 }
+
+
+// Shared unlock helper (used by both omen modal implementations).
+function unlockRayBill() {
+  if (!state.owned) state.owned = {};
+  state.owned["rayBill"] = true;
+  state.rayBillOmenShown = true;
+
+  try { saveProgress(); } catch (e) {}
+
+  // Refresh UI so Ray Bill becomes selectable/visible immediately.
+  try { if (typeof renderPick === "function") renderPick(); } catch (e) {}
+  try { if (typeof renderGallery === "function") renderGallery(); } catch (e) {}
+  try { if (typeof renderShopCards === "function") renderShopCards(); } catch (e) {}
+  try { if (typeof log === "function") log("⚡ Ray Bill unlocked! Go to Setup/Pick to use him.", "good"); } catch (e) {}
+}
+
 
 // =========================
 // PROFILE / RANK HELPERS
@@ -2226,23 +2762,37 @@ function getCardLevel(cardId) {
 }
 
 function getUpgradeCost(cardId) {
-  // scales with level: 300, 600, 900, 1200, 1500
   const lvl = getCardLevel(cardId);
-  return 300 * (lvl + 1);
-}
 
+  // costs per next upgrade level
+  const costs = [20000, 40000, 60000, 80000, 100000];
+  return costs[lvl] || 0; // lvl=0 -> cost to reach lvl1
+}
 function getUpgradedStats(cardDef) {
   const lvl = getCardLevel(cardDef && cardDef.id);
+
   const atk0 = Number(cardDef && cardDef.atk) || 0;
   const def0 = Number(cardDef && cardDef.def) || 0;
   const hp0  = Number(cardDef && cardDef.hp)  || 0;
 
-  // bonuses
-  const atk = atk0 + (1 * lvl);
-  const hp  = hp0  + (2 * lvl);
-  const def = def0 + Math.floor(lvl / 2);
+  // total bonus by level (cumulative)
+  const bonusTable = {
+    0: { atk: 0,  def: 0,  hp: 0  },
+    1: { atk: 5,  def: 5,  hp: 5  },   // 20k
+    2: { atk: 10, def: 10, hp: 10 },   // 40k
+    3: { atk: 12, def: 12, hp: 12 },   // 60k
+    4: { atk: 15, def: 15, hp: 15 },   // 80k
+    5: { atk: 20, def: 20, hp: 20 },   // 100k
+  };
 
-  return { atk, def, hp, level: lvl };
+  const b = bonusTable[lvl] || bonusTable[0];
+
+  return {
+    atk: atk0 + b.atk,
+    def: def0 + b.def,
+    hp: hp0 + b.hp,
+    level: lvl
+  };
 }
 
 function canUpgradeCard(cardId) {
@@ -2260,7 +2810,7 @@ function isCardUsableByPlayer(cardId) {
 function upgradeCard(cardId) {
   const id = String(cardId || "");
   if (!isCardUsableByPlayer(id)) {
-    alert("You can only upgrade cards you can use (base cards or purchased cards)." );
+    alert("You can only upgrade cards you can use (base cards or owned unlocks)." );
     return;
   }
 
@@ -2289,6 +2839,111 @@ function upgradeCard(cardId) {
 
   const card = findCardById(id);
   alert(`Upgraded ${card ? card.name : id} to Lv${lvl + 1}!`);
+}
+
+// =========================
+// 🤫 SECRETS: non-shop card upgrades (Profile)
+// =========================
+
+function getShopCardIdSet() {
+  const ids = new Set();
+  try {
+    (SHOP_CARDS || []).forEach((c) => { if (c && c.id) ids.add(String(c.id)); });
+  } catch (e) {}
+  return ids;
+}
+
+// Only show the specific "secret" cards the user requested.
+// They appear ONLY if owned/unlocked, and they must NOT be purchasable in the Shop.
+const SECRETS_ONLY_CARD_IDS = ["relicbornTitan", "diablo", "yrol", "abarskie", "cosmoSecret"]; // Entity, Diablo, Yrol, Abarskie, Cosmo-Secret
+
+function isSecretCardOwned(cardId) {
+  const id = String(cardId || "");
+  if (!id) return false;
+
+  // Entity (Lucky Draw legendary)
+  if (id === "relicbornTitan") return !!(state?.luckyEntityOwned || state?.owned?.relicbornTitan);
+  // Diablo unlock flag exists in save
+  if (id === "diablo") return !!(state?.diabloUnlocked || state?.owned?.diablo);
+
+  // Default: check owned map
+  return !!state?.owned?.[id];
+}
+
+function getSecretsOwnedNonShopCardsForUpgrade() {
+  const shopIds = getShopCardIdSet();
+  const all = (typeof getAllCards === "function") ? getAllCards() : [];
+  const byId = new Map((all || []).filter(Boolean).map((c) => [String(c.id), c]));
+
+  return SECRETS_ONLY_CARD_IDS
+    .filter((id) => byId.has(id))
+    .filter((id) => isSecretCardOwned(id))
+    .map((id) => byId.get(id))
+    .filter((c) => c && c.id && !shopIds.has(String(c.id)));
+}
+
+function openSecretsModal() {
+  const modal = document.getElementById("secretsModal");
+  const list = document.getElementById("secretsList");
+  const hint = document.getElementById("secretsHint");
+  if (!modal || !list) return;
+
+  const cards = getSecretsOwnedNonShopCardsForUpgrade();
+  if (!cards.length) {
+    list.innerHTML = `<div class="muted">No secret cards owned yet.</div>`;
+    if (hint) hint.textContent = "";
+    modal.style.display = "flex";
+    return;
+  }
+
+  list.innerHTML = cards.map((c) => {
+    const st = getUpgradedStats(c);
+    const lvl = st.level;
+    const cost = getUpgradeCost(c.id);
+    const atMax = lvl >= CARD_UPGRADE_MAX_LEVEL;
+    const canPay = state.gold >= cost;
+
+    const badge = lvl > 0
+      ? `<span class="badge badgeOwned">Lv ${lvl}</span>`
+      : `<span class="badge">Lv 0</span>`;
+
+    const btn = atMax
+      ? `<button class="btn" disabled>MAX</button>`
+      : `<button class="btn btnPrimary" ${canPay ? "" : "disabled"} data-secret-upgrade-id="${c.id}">Upgrade (${cost}g)</button>`;
+
+    return `
+      <div class="secretsRow">
+        <div class="secretsLeft">
+          <div class="secretsTitleLine">
+            <b>${c.name}</b>
+            ${badge}
+            <span class="pill">Damage ${st.atk} • Armor ${st.def} • Life ${st.hp}</span>
+          </div>
+          <div class="secretsMeta">Not purchasable in Shop</div>
+        </div>
+        <div style="flex:0 0 auto;">${btn}</div>
+      </div>
+    `;
+  }).join("");
+
+  // Wire buttons
+  list.querySelectorAll("button[data-secret-upgrade-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-secret-upgrade-id");
+      if (!id) return;
+      upgradeCard(id);
+      // Re-render so gold + new level reflect immediately.
+      openSecretsModal();
+    });
+  });
+
+  if (hint) hint.textContent = "";
+  modal.style.display = "flex";
+}
+
+function closeSecretsModal() {
+  const modal = document.getElementById("secretsModal");
+  if (modal) modal.style.display = "none";
 }
 
 function renderUpgradeSection(parent) {
@@ -2382,7 +3037,8 @@ function unlockSecretStreakCard() {
 
   log(`🎁 LIMITED EDITION UNLOCKED: Cosmo Secret`, "good");
   playSfx("sfxJackpot", 0.9);
-  alert("🎁 LIMITED EDITION UNLOCKED!\n\nYou received the secret card: COSMO SECRET ✅");
+  // 🌌 New: cinematic reveal modal + lore
+  showCosmoRevealModal();
   return true;
 }
 
@@ -2426,14 +3082,361 @@ function bumpWinStreakOnWin() {
   applyWinStreakMilestones();
 }
 
+// =========================
+// 🎯 MISSIONS (Home text only)
+// =========================
+function updateMissionText() {
+  const box = document.getElementById("missionText");
+  if (!box) return;
+
+  if (!state.missions) state.missions = {};
+  if (!state.owned) state.owned = {};
+
+  const total = Math.max(0, Number(state.missions.totalDefeats || 0) || 0);
+  const hasCosmo = !!state.owned["cosmoSecret"];
+  const hasRayBill = !!state.owned["rayBill"];
+
+  let mainLine = "";
+  let subLine = "";
+
+  if (!hasCosmo) {
+    const prog = Math.min(50, total);
+    const left = Math.max(0, 50 - total);
+    mainLine = "Mission 1: Defeat 50 cards to get the Cosmo Revelation.";
+    subLine = `Progress: ${prog}/50 (${left} left)`;
+  } else if (!hasRayBill) {
+    mainLine = "Mission 2: Defeat Cosmo Revelation to unlock Ray Bill.";
+    subLine = state.missions.cosmoRevelationDefeated
+      ? "Status: Cosmo Revelation defeated ✅ (Ray Bill unlock may appear)."
+      : "Status: Not defeated yet.";
+  } else if (!state.missions.diabloDefeated) {
+    mainLine = "Mission 3: Defeat Diablo.";
+    subLine = "Status: Not defeated yet.";
+  } else if (!state.missions.entityDefeated) {
+    mainLine = "Mission 4: Defeat Entity itself to proceed to Mission 5.";
+    subLine = "Status: Not defeated yet.";
+  } else {
+    mainLine = "Mission 5: Coming Soon";
+    subLine = "More missions will be added soon.";
+  }
+
+  box.innerHTML = `🎯 <b>MISSIONS</b>: ${mainLine}<span class="mutedLine">${subLine}</span>`;
+}
+
 function showView(view) {
   state.currentView = view;
-  const ids = ["home", "gallery", "setup", "game", "shop", "profile"];
+  const ids = ["home", "gallery", "story", "setup", "game", "shop", "profile"];
   ids.forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = id === view ? "block" : "none";
   });
   updateGoldUI();
+  if (view === "home") updateMissionText();
+}
+
+// =========================
+// 📜 STORY MODE (Home button)
+// =========================
+const STORY_PROGRESS_KEY = "cb_story_progress_v1";
+
+let __storyIndex = 0;
+let __storyTyping = false;
+let __storyTypeTimer = null;
+let __storyFullText = "";
+let __storyTyped = 0;
+
+// ✅ Longer + hyped story about the Revelation
+const STORY_PAGES = [
+  {
+    title: "Prologue: The First Draw",
+    body:
+`Before the first card was drawn, there was only Silence — a void that refused to end.
+
+Then a single spark broke the dark: COSMO.
+Not a star… not a god… but a WILL.
+And that will dared nothingness to become a universe.`
+  },
+  {
+    title: "Cosmo’s Law",
+    body:
+`Cosmo carved a law into reality:
+
+\"All power must be earned — in the Arena.\"
+
+So the universe learned to fight.
+Not for gold.
+Not for land.
+For GLORY.`
+  },
+  {
+    title: "Glory: The Currency of Creation",
+    body:
+`Glory is not a trophy… it’s a force.
+
+It hardens into armor.
+It sharpens into damage.
+It stitches broken timelines.
+
+And when enough Glory is gathered… it can rewrite fate itself.`
+  },
+  {
+    title: "The Seven Realms",
+    body:
+`To keep balance, Cosmo forged seven realms — each guarding a piece of the universal flame.
+
+But realms are not peaceful.
+They are hungry.
+
+And hunger always asks the same question:
+\"Why should YOU hold the power… and not us?\"`
+  },
+  {
+    title: "When Arenas Became Wars",
+    body:
+`At first, battles were sport.
+
+Then champions rose.
+Crowds screamed.
+Relics awakened.
+
+Soon the arenas stopped being games… and became WAR ZONES.
+Because every victory created Glory… and every Glory created ambition.`
+  },
+  {
+    title: "Relics That Whisper",
+    body:
+`Ancient relics don’t just empower fighters… they whisper.
+
+\"Take one more win.\"
+\"Climb one more stage.\"
+\"Break one more enemy.\"
+
+They promise immortality.
+But they never mention the price.`
+  },
+  {
+    title: "The Fracture",
+    body:
+`Somewhere beyond the visible stars, a crack formed in the sky.
+
+Time began to skip.
+Armor stopped obeying the rules.
+Healers felt their blessings fail.
+
+It wasn’t a bug.
+It was a WARNING.`
+  },
+  {
+    title: "The Secret Card",
+    body:
+`A secret card drifted between realms like a forbidden comet.
+
+Not sold.
+Not gifted.
+Earned only by obsession.
+
+Those who unlocked it heard the same words in their bones:
+\"THE REVELATION IS REAL.\"`
+  },
+  {
+    title: "COSMO REVELATION",
+    body:
+`The Revelation is not a prophecy.
+It’s a countdown.
+
+When the last seal breaks, every realm will unleash its final boss.
+The sky will split into a thousand battles.
+And Glory will rain like meteors.
+
+Only one champion will stand at the end.`
+  },
+  {
+    title: "The God of All Gods",
+    body:
+`Above every throne… beyond every cosmic god… there is ONE.
+
+The God of All Gods.
+
+It does not hunt worlds.
+It judges them.
+And when it wakes… it will look into the Arena and decide what deserves to exist.`
+  },
+  {
+    title: "Why Everyone Fights",
+    body:
+`Every fighter wants Glory.
+But not for the same reason.
+
+Some want to protect their realm.
+Some want to erase their past.
+Some want to rewrite the rules.
+
+And some… just want to watch the universe burn in applause.`
+  },
+  {
+    title: "The Challenger",
+    body:
+`Cosmo was never running from the war.
+Cosmo was building a CHALLENGER.
+
+You.
+
+Your wins are not just numbers.
+They are signals.
+
+Every victory tells the universe:
+\"I am coming for the throne.\"`
+  },
+  {
+    title: "Final Warning",
+    body:
+`When the bosses arrive, there will be no easy battles.
+No safe turns.
+
+Only strategy.
+Only nerves.
+Only Glory.
+
+And when the God of All Gods finally descends… it won’t ask if you’re ready.
+
+It will ask what you’re worth.`
+  },
+  {
+    title: "⚔️ Boss Battle (Coming Soon)",
+    body:
+`You reached the edge of the story.
+
+Next: Boss fights… realm champions… and the GOD OF ALL GODS.
+
+COMING SOON.
+
+Until then… keep climbing.
+Keep winning.
+Keep building your Glory.`
+  },
+];
+
+function loadStoryProgress() {
+  try {
+    const raw = localStorage.getItem(STORY_PROGRESS_KEY);
+    if (!raw) return 0;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(STORY_PAGES.length - 1, Math.floor(n)));
+  } catch (e) {
+    return 0;
+  }
+}
+
+function saveStoryProgress() {
+  try { localStorage.setItem(STORY_PROGRESS_KEY, String(__storyIndex)); } catch (e) {}
+}
+
+function storyStopTyping() {
+  if (__storyTypeTimer) {
+    try { clearInterval(__storyTypeTimer); } catch (e) {}
+    __storyTypeTimer = null;
+  }
+  __storyTyping = false;
+  const body = document.getElementById("storyBody");
+  if (body) body.classList.remove("typing");
+}
+
+function storyFinishTyping() {
+  storyStopTyping();
+  const body = document.getElementById("storyBody");
+  if (body) body.textContent = __storyFullText || "";
+  __storyTyped = (__storyFullText || "").length;
+}
+
+function storyTypeText(text) {
+  storyStopTyping();
+  __storyFullText = String(text || "");
+  __storyTyped = 0;
+  __storyTyping = true;
+
+  const body = document.getElementById("storyBody");
+  if (!body) return;
+  body.textContent = "";
+  body.classList.add("typing");
+
+  // Slightly cinematic typing speed; newlines pause longer.
+  __storyTypeTimer = setInterval(() => {
+    if (!__storyTyping) return;
+    if (__storyTyped >= __storyFullText.length) {
+      storyStopTyping();
+      return;
+    }
+    const ch = __storyFullText.charAt(__storyTyped);
+    __storyTyped += 1;
+    body.textContent += ch;
+  }, 14);
+}
+
+function openStoryMode() {
+  __storyIndex = loadStoryProgress();
+  renderStoryPage(true);
+  showView("story");
+
+  // replay intro animation
+  const card = document.getElementById("storyCard");
+  if (card) {
+    card.classList.remove("storyIntro");
+    // force reflow so animation can replay
+    void card.offsetWidth;
+    card.classList.add("storyIntro");
+  }
+}
+
+function renderStoryPage(animateTyping = false) {
+  const p = STORY_PAGES[Math.max(0, Math.min(STORY_PAGES.length - 1, __storyIndex))];
+  const pill = document.getElementById("storyPagePill");
+  const title = document.getElementById("storyTitle");
+  const body = document.getElementById("storyBody");
+  const boss = document.getElementById("storyBossWrap");
+
+  if (pill) pill.textContent = `Page ${__storyIndex + 1} / ${STORY_PAGES.length}`;
+  if (title) title.textContent = p?.title || "";
+
+  const text = p?.body || "";
+  if (body) {
+    if (animateTyping) storyTypeText(text);
+    else body.textContent = text;
+  }
+
+  const prev = document.getElementById("btnStoryPrev");
+  const next = document.getElementById("btnStoryNext");
+  if (prev) prev.disabled = __storyIndex <= 0;
+
+  if (next) {
+    const atEnd = __storyIndex >= STORY_PAGES.length - 1;
+    next.textContent = atEnd ? "⚔️ Coming Soon" : "Next ➡️";
+  }
+
+  // Boss preview portal only on final page
+  if (boss) {
+    boss.style.display = (__storyIndex >= STORY_PAGES.length - 1) ? "block" : "none";
+  }
+
+  saveStoryProgress();
+}
+
+function storyPrev() {
+  if (__storyTyping) { storyFinishTyping(); return; }
+  __storyIndex = Math.max(0, __storyIndex - 1);
+  renderStoryPage(true);
+}
+
+function storyNext() {
+  if (__storyTyping) { storyFinishTyping(); return; }
+
+  if (__storyIndex >= STORY_PAGES.length - 1) {
+    alert("⚔️ Boss + God of All Gods battle is COMING SOON!\n\nFor now, return to Home and keep building your Glory.");
+    showView("home");
+    return;
+  }
+  __storyIndex = Math.min(STORY_PAGES.length - 1, __storyIndex + 1);
+  renderStoryPage(true);
 }
 
 // =========================
@@ -2451,6 +3454,7 @@ function cloneCard(card) {
     maxHp: st.hp,
     hp: st.hp,
     shield: st.def,
+    shieldCap: st.def,
     cooldown: 0,
     titanKillCd: 0,
     frozen: 0,
@@ -3057,6 +4061,111 @@ function openModal({ title, text, stageLabel, hint, goldReward, mode }) {
   const modal = document.getElementById("resultModal");
   if (modal) modal.style.display = "flex";
 }
+
+// =========================
+// 🌩️ Omen Reveal: Ray Bill (shown when Cosmo Secret is defeated)
+// =========================
+const RAY_BILL_CARD = {
+  id: "rayBill",
+  name: "Ray Bill",
+  img: "cards/ray-bill.png",
+  atk: 8,
+  def: 8,
+  hp: 5,
+  skillName: "Summon Thor's Ungodly Power",
+  skillDesc: "Throw a random 100–300 burst of PURE magic (TRUE) damage that ignores armor. Ray Bill also converts that damage into HP + Armor. (Cooldown 5 turns).",
+  cooldownTurns: 5,
+  lore:
+`Born under a storm that never ended, Ray Bill was raised in the ruins of a fallen pantheon.
+He is not a god—he is the debt collector of gods.
+
+When the old thrones shattered, Ray Bill stole a fragment of the Thunder-Sigil, a relic said to answer only to the wrath of the worthy.
+Now he walks the edge of worlds, listening for the next divine lie to crack the sky.
+
+Cosmo’s fall is his signal.
+The heavens are trembling.
+And Ray Bill is coming… to make every false god pay.`
+};
+
+function ensureRayBillOmenModal() {
+  if (document.getElementById("rayBillOmenOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "rayBillOmenOverlay";
+  overlay.className = "modalOverlay";
+  overlay.style.display = "none";
+
+  const box = document.createElement("div");
+  box.className = "modalBox cosmoRevealBox omenModalBox";
+
+  // Use existing modal styles (modalOverlay/modalBox + cosmoRevealHero)
+  box.innerHTML = `
+    <div class="modalHeader">
+      <div>
+        <div class="modalTitle">⚠️ The end is near…</div>
+        <div class="modalPill">WAR INCOMING</div>
+      </div>
+      <button class="btn btnGhost" id="btnCloseRayBill">✖</button>
+    </div>
+    <div class="modalBody">
+      <p class="modalText">The end is near and war is about to begin.</p>
+
+      <div class="cosmoRevealHero">
+        <div class="cosmoCardFrame">
+          <img src="${RAY_BILL_CARD.img}" alt="${RAY_BILL_CARD.name}"
+               onerror="this.onerror=null;this.src=window.__cardPlaceholder('${RAY_BILL_CARD.name.replace(/'/g,"\\'")}')"/>
+        </div>
+
+        <div class="cosmoRevealLore">
+<b>${RAY_BILL_CARD.name}</b>
+Damage: ${RAY_BILL_CARD.atk}
+Def: ${RAY_BILL_CARD.def}
+Life: ${RAY_BILL_CARD.hp}
+
+Ability: ${RAY_BILL_CARD.skillName} (CD ${RAY_BILL_CARD.cooldownTurns})
+${RAY_BILL_CARD.skillDesc}
+
+Lore:
+${RAY_BILL_CARD.lore}
+        </div>
+      </div>
+    </div>
+    <div class="modalActions single">
+      <button class="btn btnPrimary big" id="btnAcknowledgeRayBill">⚔️ Prepare</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.style.display = "none";
+  };
+
+  const btnX = box.querySelector("#btnCloseRayBill");
+  const btnOk = box.querySelector("#btnAcknowledgeRayBill");
+  if (btnX) btnX.addEventListener("click", close);
+  if (btnOk) btnOk.addEventListener("click", close);
+
+  // click outside closes
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  if (btnOk) btnOk.addEventListener("click", () => {
+    unlockRayBill();
+    close();
+  });
+}
+
+
+function showRayBillOmenModal() {
+  ensureRayBillOmenModal();
+  const overlay = document.getElementById("rayBillOmenOverlay");
+  if (!overlay) return;
+  overlay.style.display = "flex";
+}
+
 function closeModal() { const m = document.getElementById("resultModal"); if (m) m.style.display = "none"; }
 
 // =========================
@@ -3185,8 +4294,8 @@ function updateUI() {
   $("pHpBar").style.width = `${Math.round((p.hp / p.maxHp) * 100)}%`;
   $("eHpBar").style.width = `${Math.round((e.hp / e.maxHp) * 100)}%`;
 
-  $("pShieldBar").style.width = `${Math.round((p.shield / getShieldCap()) * 100)}%`;
-  $("eShieldBar").style.width = `${Math.round((e.shield / getShieldCap()) * 100)}%`;
+  $("pShieldBar").style.width = `${Math.round((p.shield / getShieldCap(p)) * 100)}%`;
+  $("eShieldBar").style.width = `${Math.round((e.shield / getShieldCap(e)) * 100)}%`;
 
   const pLock = p.noArmorGain > 0 ? ` • Time Lock: ${p.noArmorGain}` : "";
   const eLock = e.noArmorGain > 0 ? ` • Time Lock: ${e.noArmorGain}` : "";
@@ -3208,6 +4317,31 @@ function updateUI() {
   $("btnAttack").disabled = !playerTurn;
   $("btnSkill").disabled = !playerTurn;
   $("btnEnd").disabled = !playerTurn;
+
+  // Potion button (global 3-minute cooldown, requires inventory)
+  const bp = $("btnPotion");
+  if (bp) {
+    const hasAny = Object.values(state.ownedPotions || {}).some((n) => (Number(n || 0) || 0) > 0);
+    const ready = isPotionReady();
+
+    // ✅ Keep hover tooltip working even while on cooldown.
+    // Some browsers don't show tooltips on disabled buttons, so only disable when
+    // it's not the player's turn or the player has no potions.
+    bp.disabled = !playerTurn || !hasAny;
+
+    const invCount = hasAny
+      ? Object.values(state.ownedPotions || {}).reduce((a, b) => a + (Number(b || 0) || 0), 0)
+      : 0;
+
+    bp.textContent = !hasAny
+      ? "🧪 Use Potion (0)"
+      : (ready ? `🧪 Use Potion (${invCount})` : `🧪 Potion CD: ${formatPotionCd()}`);
+
+    // ✅ Always show remaining cooldown turns on hover (even when ready)
+    bp.title = !hasAny
+      ? "Buy potions in the Shop\nPotion cooldown: Ready"
+      : `Potions in inventory: ${invCount}\nPotion cooldown: ${formatPotionCd()}`;
+  }
 }
 
 function checkWin() {
@@ -3261,6 +4395,42 @@ function checkWin() {
 
     // after death flip (0.55s) + 1s delay
     setTimeout(() => {
+      // =========================
+      // 🎯 Missions progress
+      // =========================
+      if (!state.missions) state.missions = {};
+      state.missions.totalDefeats = Math.max(0, Number(state.missions.totalDefeats || 0) || 0) + 1;
+
+      // Mission 1 reward: defeat 50 cards -> unlock Cosmo Secret (Cosmo Revelation)
+      if (state.missions.totalDefeats >= 50) {
+        if (!state.owned) state.owned = {};
+        if (!state.owned["cosmoSecret"]) {
+          state.owned["cosmoSecret"] = true;
+          try { saveProgress(); } catch(e) {}
+          try { showCosmoRevealModal(); } catch(e) {}
+          try { if (typeof renderPick === "function") renderPick(); } catch(e) {}
+          try { if (typeof renderGallery === "function") renderGallery(); } catch(e) {}
+          try { if (typeof renderShopCards === "function") renderShopCards(); } catch(e) {}
+        }
+      }
+
+      // Mission 2: Defeat Cosmo Revelation
+      if (e && e.id === "cosmoSecret") state.missions.cosmoRevelationDefeated = true;
+      // Mission 3: Defeat Diablo
+      if (e && e.id === "diablo") state.missions.diabloDefeated = true;
+      // Mission 4: Defeat Entity (relicbornTitan)
+      if (e && e.id === "relicbornTitan") state.missions.entityDefeated = true;
+
+      try { saveProgress(); } catch(e) {}
+      try { if (state.currentView === "home") updateMissionText(); } catch(e) {}
+
+      // 🌩️ Secret omen: defeating Cosmo Secret reveals Ray Bill
+      if (e && e.id === "cosmoSecret" && !state.rayBillOmenShown) {
+        state.rayBillOmenShown = true;
+        try { saveProgress(); } catch (e) {}
+        showRayBillOmenModal();
+      }
+
       // Profile stats
       state.profileWins = Math.max(0, Number(state.profileWins || 0) || 0) + 1;
       state.highStage = Math.max(Number(state.highStage || 0) || 0, Number(state.stage || 0) || 0);
@@ -3293,6 +4463,15 @@ function nextTurn() {
   if (checkWin()) return;
 
   state.turn = state.turn === "player" ? "enemy" : "player";
+
+  // ✅ Potion cooldown is turn-based (counts down on every PLAYER turn start)
+  if (state.turn === "player") {
+    state.potionCooldownTurns = Math.max(0, Number(state.potionCooldownTurns || 0) || 0);
+    if (state.potionCooldownTurns > 0) {
+      state.potionCooldownTurns -= 1;
+      saveProgress();
+    }
+  }
 
   // ✅ OP Relic: Golden Heart (+5 gold every turn)
   // Trigger when a new PLAYER turn starts.
@@ -3451,6 +4630,98 @@ function playerEndTurn() {
   playSfx("sfxEnd", 0.65);
   log("You ended your turn.", "warn");
   nextTurn();
+}
+
+// =========================
+// 🧪 POTION USE (in-battle)
+// =========================
+function reduceAbilityCooldownByOne(f) {
+  if (!f) return;
+  // Turn-based cooldown
+  f.cooldown = Math.max(0, Number(f.cooldown || 0) || 0);
+  if (f.cooldown > 0) f.cooldown -= 1;
+
+  // Real-time cooldown (redeemed legendaries)
+  if (f.skillReadyAt && f.skillReadyAt > Date.now()) {
+    f.skillReadyAt = Math.max(Date.now(), f.skillReadyAt - 60 * 1000);
+  }
+}
+
+function applyPotionEffect(potion) {
+  const p = state.player;
+  if (!p || !potion) return;
+
+  const cap = getShieldCap(p);
+  const eff = String(potion.effect || "");
+
+  if (eff === "hp" || eff === "twilight" || eff === "galactic") {
+    p.hp = p.maxHp;
+  }
+  if (eff === "armor" || eff === "twilight" || eff === "galactic") {
+    p.shield = cap;
+    p.def = p.shield;
+  }
+  if (eff === "endurance" || eff === "galactic") {
+    reduceAbilityCooldownByOne(p);
+  }
+}
+
+function consumePotion(id) {
+  const cur = getPotionCount(id);
+  if (cur <= 0) return false;
+  state.ownedPotions[id] = cur - 1;
+  if (state.ownedPotions[id] <= 0) delete state.ownedPotions[id];
+  saveProgress();
+  return true;
+}
+
+function usePotionFlow() {
+  if (state.phase !== "battle") {
+    alert("You can only use potions during battle.");
+    return;
+  }
+  if (state.turn !== "player") {
+    alert("You can only use potions on your turn.");
+    return;
+  }
+
+  const available = (POTIONS || []).filter((x) => getPotionCount(x.id) > 0);
+  if (!available.length) {
+    alert("No potions in your inventory. Buy some in the Shop (🧪 Potions tab).");
+    return;
+  }
+  if (!isPotionReady()) {
+    alert(`Potion is on cooldown: ${formatPotionCd()}`);
+    return;
+  }
+
+  const menu = available
+    .map((x, i) => `${i + 1}) ${x.name} (x${getPotionCount(x.id)})`)
+    .join("\n");
+
+  const raw = prompt(`Choose a potion to use:\n\n${menu}\n\n(Type the number)`);
+  if (raw == null) return;
+  const idx = (parseInt(String(raw).trim(), 10) || 0) - 1;
+  const chosen = available[idx];
+  if (!chosen) {
+    alert("Invalid selection.");
+    return;
+  }
+
+  if (!consumePotion(chosen.id)) {
+    alert("You don't have that potion anymore.");
+    return;
+  }
+
+  applyPotionEffect(chosen);
+  setPotionCooldown();
+
+  // feedback
+  playSfx("sfxSkill", 0.55);
+  if (typeof log === "function") log(`🧪 You used ${chosen.name}!`, "good");
+  if (typeof floatingDamage === "function") floatingDamage("player", "🧪", "good");
+
+  updateUI();
 }
 
 // =========================
@@ -3958,11 +5229,17 @@ function startGame(playerCardId) {
   state.enemy.passiveEnabled = true;
   state.enemy.aiType = pickEnemyAI();
 
-  state.player.shield = Math.min(getShieldCap(), state.player.shield);
+  state.player.shield = Math.min(getShieldCap(state.player), state.player.shield);
+  state.player.def = state.player.shield;
 
   state.phase = "battle";
   state.turn = "player";
   state.round = 1;
+
+  // ✅ Potions must be usable when a new match starts
+  // Turn-based cooldown shouldn't carry over from previous runs.
+  state.potionCooldownTurns = 0;
+  saveProgress();
 
   showView("game");
     resetCardVisuals();
@@ -4050,6 +5327,7 @@ function bootGameUI() {
   safeOn("btnAttack", () => { playSfx("sfxClick", 0.35); playerAttack(); });
   safeOn("btnSkill", () => { playSfx("sfxClick", 0.35); playerSkill(); });
   safeOn("btnEnd", () => { playSfx("sfxClick", 0.35); playerEndTurn(); });
+  safeOn("btnPotion", () => { playSfx("sfxClick", 0.35); usePotionFlow(); });
   safeOn("btnReset", () => { playSfx("sfxClick", 0.35); resetAll(); });
 
 // Ability info (click the "i" icon to also print the description into the battle log)
@@ -4070,11 +5348,28 @@ function bootGameUI() {
 
   safeOn("btnBattleNow", () => { playSfx("sfxClick", 0.45); resetAll(); });
   safeOn("btnOpenGallery", () => { playSfx("sfxClick", 0.45); renderGallery(); showView("gallery"); });
+  safeOn("btnStoryMode", () => { playSfx("sfxClick", 0.45); openStoryMode(); });
   safeOn("btnBackHomeFromGallery", () => { playSfx("sfxClick", 0.45); showView("home"); });
   safeOn("btnGalleryToBattle", () => { playSfx("sfxClick", 0.45); resetAll(); });
   safeOn("btnBackHomeFromSetup", () => { playSfx("sfxClick", 0.45); showView("home"); });
   safeOn("btnSetupGallery", () => { playSfx("sfxClick", 0.45); renderGallery(); showView("gallery"); });
   safeOn("btnExitToHome", () => { playSfx("sfxClick", 0.45); showView("home"); });
+
+  // =========================
+  // STORY MODE
+  // =========================
+  safeOn("btnStoryBackHome", () => { playSfx("sfxClick", 0.35); showView("home"); });
+  safeOn("btnStoryPrev", () => { playSfx("sfxClick", 0.25); storyPrev(); });
+  safeOn("btnStoryNext", () => { playSfx("sfxClick", 0.25); storyNext(); });
+
+  // =========================
+  // COSMO REVELATION UNLOCK MODAL
+  // =========================
+  safeOn("btnCosmoGoNow", () => {
+    playSfx("sfxClick", 0.35);
+    closeCosmoRevealModal();
+    showView("home");
+  });
 
   safeOn("btnOpenShop", () => { playSfx("sfxClick", 0.45); renderShop(); setShopTab("relics"); showView("shop"); });
   safeOn("btnHomeShop", () => { playSfx("sfxClick", 0.45); renderShop(); setShopTab("relics"); showView("shop"); });
@@ -4087,6 +5382,10 @@ function bootGameUI() {
   safeOn("btnShopProfile", () => { playSfx("sfxClick", 0.45); openProfile("shop"); });
   safeOn("btnGameProfile", () => { playSfx("sfxClick", 0.45); openProfile("game"); });
   safeOn("btnProfileBackHome", () => { playSfx("sfxClick", 0.45); showView(_profilePrevView || "home"); });
+
+  // 🤫 Secrets (upgrade non-shop cards)
+  safeOn("btnProfileSecrets", () => { playSfx("sfxClick", 0.35); openSecretsModal(); });
+  safeOn("btnSecretsClose", () => { playSfx("sfxClick", 0.25); closeSecretsModal(); });
 
   // Profile quick navigation
   safeOn("btnProfileToShop", () => { playSfx("sfxClick", 0.45); renderShop(); setShopTab("relics"); showView("shop"); });
@@ -4125,6 +5424,18 @@ function bootGameUI() {
   safeOn("btnRedeemRevealClaim", () => { playSfx("sfxClick", 0.35); closeRedeemRevealModal(); });
   safeOn("btnRedeemRevealClose", () => { playSfx("sfxClick", 0.25); closeRedeemRevealModal(); });
 
+  // 🌌 Cosmo revelation modal
+  safeOn("btnCosmoGoNow", () => {
+    playSfx("sfxClick", 0.35);
+    closeCosmoRevealModal();
+    showView("home");
+  });
+
+  // 📜 Story mode navigation
+  safeOn("btnStoryBackHome", () => { playSfx("sfxClick", 0.35); showView("home"); });
+  safeOn("btnStoryPrev", () => { playSfx("sfxClick", 0.25); storyPrev(); });
+  safeOn("btnStoryNext", () => { playSfx("sfxClick", 0.35); storyNext(); });
+
   // Click outside closes redeem reveal
   const redeemRevealModal = document.getElementById("redeemRevealModal");
   if (redeemRevealModal) {
@@ -4143,6 +5454,8 @@ function bootGameUI() {
 
   safeOn("tabShopRelics", () => { playSfx("sfxClick", 0.35); setShopTab("relics"); });
   safeOn("tabShopCards", () => { playSfx("sfxClick", 0.35); setShopTab("cards"); });
+  safeOn("tabShopPotions", () => { playSfx("sfxClick", 0.35); setShopTab("potions"); });
+  safeOn("tabShopPotions", () => { playSfx("sfxClick", 0.35); setShopTab("potions"); });
 
 
 
