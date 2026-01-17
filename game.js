@@ -1,5 +1,5 @@
 // =========================
-// CARD BATTLER (SURVIVAL + GOLD + SHOP + RELICS + AI + HIT FX + SFX)
+// Cosmic Card Wars (SURVIVAL + GOLD + SHOP + RELICS + AI + HIT FX + SFX)
 // =========================
 
 
@@ -5510,7 +5510,7 @@ let tutorialStepIndex = 0;
 const TUTORIAL_STEPS = [
   {
     title: "Welcome!",
-    text: "This is a Card Battler Survival game. Pick a card, fight enemies, earn gold, buy stronger cards and relics to survive longer."
+    text: "This is a Cosmic Card Wars Survival game. Pick a card, fight enemies, earn gold, buy stronger cards and relics to survive longer."
   },
   {
     title: "Normal Attack",
