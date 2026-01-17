@@ -50,7 +50,11 @@
         <div class="heroActions">
           <button class="btn btnPrimary" id="btnBattleNow">⚔️ Battle Now</button>
           <button class="btn btnGhost" id="btnOpenGallery">🃏 Gallery</button>
+          <button class="btn btnSoft" id="btnStoryMode">📜 Story Mode</button>
         </div>
+
+        <!-- ✅ Missions (text only guide) -->
+        <div class="missionText" id="missionText"></div>
 
         <div class="heroHints">
           <div class="hint">🛡️ Defense absorbs damage first</div>
@@ -75,6 +79,7 @@
         </div>
 
         <div class="topbarActions">
+          <button class="btn btnSoft" id="btnProfileSecrets">🤫 Secrets</button>
           <button class="btn btnGhost" id="btnProfileToBattle">⚔️ Battle</button>
           <button class="btn btnGhost" id="btnProfileToShop">🛒 Shop</button>
           <button class="btn btnGhost" id="btnProfileBackHome">🏠 Home</button>
@@ -173,6 +178,7 @@
           <div class="shopTabs">
             <button class="tabBtn tabActive" id="tabShopRelics">🪬 Relics</button>
             <button class="tabBtn" id="tabShopCards">🃏 Upcoming Cards</button>
+            <button class="tabBtn" id="tabShopPotions">🧪 Potions</button>
             <button class="tabBtn" id="tabShopLucky">🎰 Lucky Draw</button>
           </div>
         </div>
@@ -193,6 +199,11 @@
       <!-- Cards tab -->
       <div id="shopCardsWrap" style="display:none;">
         <div id="shopGrid" class="shopGrid"></div>
+      </div>
+
+      <!-- Potions tab -->
+      <div id="shopPotionsWrap" style="display:none;">
+        <div id="shopPotionGrid" class="shopGrid"></div>
       </div>
 
       <!-- Lucky Draw tab -->
@@ -255,6 +266,44 @@
       </div>
 
       <div id="galleryGrid" class="grid"></div>
+    </div>
+  </div>
+
+  <!-- STORY MODE -->
+  <div id="story" class="screen" style="display:none;">
+    <div class="wrap">
+      <div class="topbar">
+        <div>
+          <div class="titleRow">
+            <h2 class="pageTitle">Story Mode</h2>
+            <span class="pill" id="storyPagePill">Page 1</span>
+          </div>
+          <p class="muted" id="storySubtitle">The origin of Cosmo… and why the universe fights for glory.</p>
+        </div>
+        <div class="topbarActions">
+          <button class="btn btnGhost" id="btnStoryBackHome">🏠 Home</button>
+        </div>
+      </div>
+
+      <div class="storyCard" id="storyCard">
+        <div class="storyTitle" id="storyTitle">—</div>
+        <div class="storyBody" id="storyBody">—</div>
+
+        <!-- 🌌 Boss preview (shows only on final page) -->
+        <div class="storyBossWrap" id="storyBossWrap" style="display:none;">
+          <div class="storyBossPortal" aria-hidden="true"></div>
+          <div class="storyBossInner">
+            <div class="storyBossTag">⚔️ BOSS FIGHT</div>
+            <div class="storyBossTitle">GOD OF ALL GODS</div>
+            <div class="storyBossSub">COMING SOON</div>
+          </div>
+        </div>
+
+        <div class="storyFooter">
+          <button class="btn btnGhost" id="btnStoryPrev">⬅️ Back</button>
+          <button class="btn btnPrimary" id="btnStoryNext">Next ➡️</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -408,6 +457,7 @@
             <button class="btn btnPrimary big" id="btnAttack">⚔️ Attack</button>
             <button class="btn btnSoft big" id="btnSkill">✨ Use Skill</button>
             <button class="btn btnGhost big" id="btnEnd">⏭️ End Turn</button>
+            <button class="btn btnGhost big" id="btnPotion">🧪 Use Potion</button>
           </div>
         </div>
 
@@ -534,6 +584,46 @@
       <div class="modalActions">
         <button class="btn btnPrimary big" id="btnRedeemRevealClaim">✨ CLAIM</button>
         <button class="btn btnGhost big" id="btnRedeemRevealClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🌌 COSMO REVELATION UNLOCK MODAL -->
+  <div id="cosmoRevealModal" class="modalOverlay" style="display:none;">
+    <div class="modalBox cosmoRevealBox">
+      <div class="modalHeader">
+        <div class="modalTitle">🌌 Cosmo Revelation</div>
+        <div class="modalPill">Unlocked</div>
+      </div>
+      <div class="modalBody">
+        <p class="modalText" id="cosmoRevealText">A forbidden page of the cosmos has been revealed…</p>
+
+        <div class="cosmoRevealHero">
+          <div class="cosmoCardFrame">
+            <img id="cosmoRevealImg" src="" alt="Cosmo card" />
+            <div class="redeemShine"></div>
+          </div>
+          <div class="cosmoRevealLore" id="cosmoRevealLore">—</div>
+        </div>
+      </div>
+      <div class="modalActions single">
+        <button class="btn btnPrimary big" id="btnCosmoGoNow">Go Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🤫 SECRETS: NON-SHOP CARD UPGRADE MODAL -->
+  <div id="secretsModal" class="modalOverlay" style="display:none;">
+    <div class="modalBox secretsModalBox">
+      <div class="modalHeader">
+        <div class="modalTitle">🤫 Secrets</div>
+        <div class="modalPill" id="secretsModalPill">Upgrade non-shop cards</div>
+      </div>
+      <div class="modalBody">
+        <div class="secretsList" id="secretsList"></div>
+      </div>
+      <div class="modalActions single">
+        <button class="btn btnGhost big" id="btnSecretsClose">Close</button>
       </div>
     </div>
   </div>
