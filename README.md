@@ -152,7 +152,7 @@ flowchart TD
 ## 📸 Screenshots (placeholder)
 
 > Add your screenshots to `assets/` and update the links below.
-
+'''
 
 ![ccw Screenshot](assets/home.png)
 ![ccw Screenshot](assets/battle.png)
