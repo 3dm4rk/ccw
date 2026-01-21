@@ -1889,28 +1889,28 @@ const POTIONS = [
   {
     id: "potionArmor",
     name: "Potion of Armor",
-    price: 12000,
+    price: 5000,
     desc: "Fully restores your armor/defense. (Potion cooldown: 10 turns)",
     effect: "armor"
   },
   {
     id: "potionEndurance",
     name: "Potion of Endurance",
-    price: 18000,
+    price: 8000,
     desc: "Reduces your ability cooldown by 1. (Potion cooldown: 10 turns)",
     effect: "endurance"
   },
   {
     id: "potionTwilight",
     name: "Potion of Twilight",
-    price: 25000,
+    price: 5000,
     desc: "Fully restores your HP and armor. (Potion cooldown: 10 turns)",
     effect: "twilight"
   },
   {
     id: "potionGalacticWanderer",
     name: "Potion of Halactic Wonderer",
-    price: 500000,
+    price: 10000,
     desc: "Fully restores HP + armor and reduces ability cooldown by 1. (Potion cooldown: 10 turns)",
     effect: "galactic"
   }
