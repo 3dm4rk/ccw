@@ -356,6 +356,30 @@ function healUnit(target, amount, opts = {}) {
 }
 
 
+
+// =========================
+// ❤️ Max HP helper (life gain)
+// - Reboot Seal should block ANY HP / MaxHP increase ("anti-heal")
+// - This helper clamps HP to max but does NOT auto-heal (caller decides)
+// =========================
+function gainMaxHp(target, amount, opts = {}) {
+  if (!target) return 0;
+  amount = Number(amount);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+
+  const allowWhenBlocked = !!opts.allowWhenBlocked; // for rare cases like resurrection designs
+  if (!allowWhenBlocked && !canHeal(target)) return 0;
+
+  const before = Math.max(1, Number(target.maxHp || target.hp || 1) || 1);
+  const after = Math.max(1, before + amount);
+
+  target.maxHp = after;
+  // keep current HP within new max (no auto-heal here)
+  target.hp = Math.min(after, Math.max(0, Number(target.hp || 0) || 0));
+
+  return after - before;
+}
+
 // =========================
 // 🛡️ LeiRality Passive: Defense Specialist helpers
 // =========================
@@ -698,7 +722,22 @@ function buildSkillHoverText(p, cdTip) {
   try {
     if (p?.base?.id === "zukinimato") return buildZukinimatoSkillHover(p, cdTip);
   } catch (e) {}
-  return `${p.base.skillName}: ${p.base.skillDesc}\n${cdTip}`;
+
+  const skillName = (p?.base?.skillName || "Skill");
+  const skillDesc = (p?.base?.skillDesc || "—");
+  const passiveLines = getPassiveHoverLines(p);
+
+  const out = [];
+  out.push(`${skillName}: ${skillDesc}`);
+  if (cdTip) out.push(cdTip);
+
+  if (passiveLines && passiveLines.length) {
+    out.push("");
+    out.push("Passive:");
+    passiveLines.forEach(l => out.push(`• ${l}`));
+  }
+
+  return out.join("\n");
 }
 
 function buildZukinimatoSkillHover(p, cdTip) {
@@ -761,6 +800,234 @@ function buildZukinimatoSkillHover(p, cdTip) {
   }
 
   return `${p.base.skillName}: ${p.base.skillDesc}\n${cdTip}\n\n${lines.join("\n")}`;
+}
+
+// =========================
+// 🛈 SKILL / PASSIVE TOOLTIP (hover + long-press)
+// =========================
+
+function getPassiveHoverLines(unit) {
+  try {
+    const id = unit?.base?.id || unit?.id || "";
+    const lines = [];
+
+    // If the skill description already contains a "Passive:" sentence, surface it as a passive line too.
+    try {
+      const sd = String(unit?.base?.skillDesc || "");
+      const m = sd.match(/Passive\s*:\s*([^\.\n]+(?:\.[^\n]+)*)/i);
+      if (m && m[1]) {
+        const cleaned = m[1].trim().replace(/\s+/g, " ");
+        if (cleaned) lines.push(cleaned);
+      }
+    } catch (e) {}
+
+    // Hand-written passives for key cards (so players can actually understand combat effects)
+    if (id === "eyJiEs") {
+      lines.push("Basic attacks deal extra TRUE damage based on Ey-Ji-Es' current ATK (current stats).");
+    } else if (id === "leiRality") {
+      lines.push("Immune to instant death / one-hit kill effects.");
+      lines.push("If an enemy uses defense-penetration/ignore-defense skills, their total ATK is halved.");
+      lines.push("Missing HP converts into additional DEF.");
+      lines.push("Each time LeiRality defeats an enemy, remaining HP is doubled.");
+    } else if (id === "roque") {
+      lines.push("Upon death, has a chance to resurrect (revive). When revived, it gains stats from the enemy (battle-only).");
+    } else if (id === "yrol") {
+      const cdMin = 5;
+      const now = Date.now();
+      const onCd = unit?.passiveCdUntil && unit.passiveCdUntil > now;
+      lines.push(`When hit by an ability, Yrol's passive doubles core stats. (${cdMin} min cooldown)${onCd ? " (Currently on cooldown)" : ""}`);
+    } else if (id === "cosmoSecret") {
+      const cd = Math.max(0, Number(unit?.cosmoPassiveCd || 0) || 0);
+      lines.push(`When attacked, reflects incoming damage as TRUE damage and converts that damage into Life + Armor.${cd > 0 ? ` (Passive CD: ${cd} turn(s) left)` : ""}`);
+    }
+
+    // Dedupe + remove empties
+    return Array.from(new Set(lines.map(s => String(s || "").trim()).filter(Boolean)));
+  } catch (e) {
+    return [];
+  }
+}
+
+let __skillTipEl = null;
+let __skillTipPinned = false;
+let __skillTipHideT = null;
+
+function ensureSkillTooltipEl() {
+  if (__skillTipEl) return __skillTipEl;
+  const el = document.createElement("div");
+  el.id = "skillTooltip";
+  el.className = "skillTooltip";
+  el.setAttribute("role", "tooltip");
+  el.style.display = "none";
+  el.addEventListener("click", (ev) => {
+    // allow tap inside without closing
+    ev.stopPropagation();
+  });
+  document.body.appendChild(el);
+  __skillTipEl = el;
+  return el;
+}
+
+function positionSkillTooltip(anchor, tip) {
+  if (!anchor || !tip) return;
+  const r = anchor.getBoundingClientRect();
+  const pad = 10;
+  const maxW = Math.min(360, Math.max(240, Math.round(window.innerWidth * 0.92)));
+
+  tip.style.maxWidth = maxW + "px";
+
+  // Measure after setting maxWidth
+  tip.style.left = "0px";
+  tip.style.top = "0px";
+  tip.style.transform = "translate(-9999px, -9999px)";
+  tip.style.display = "";
+  const tr = tip.getBoundingClientRect();
+
+  let left = r.left + (r.width / 2) - (tr.width / 2);
+  left = Math.max(pad, Math.min(window.innerWidth - tr.width - pad, left));
+
+  // Prefer above the button; if not enough space, place below
+  let top = r.top - tr.height - 10;
+  const placeBelow = top < pad;
+  if (placeBelow) top = r.bottom + 10;
+  top = Math.max(pad, Math.min(window.innerHeight - tr.height - pad, top));
+
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+  tip.style.transform = "translate(0,0)";
+  tip.classList.toggle("below", placeBelow);
+}
+
+function showSkillTooltip(anchor, unit, cdTip, pinned) {
+  try { clearTimeout(__skillTipHideT); } catch (e) {}
+  const tip = ensureSkillTooltipEl();
+  __skillTipPinned = !!pinned;
+
+  const text = buildSkillHoverText(unit, cdTip || "");
+  tip.textContent = text || "—";
+  tip.style.display = "";
+  positionSkillTooltip(anchor, tip);
+
+  // Auto hide if pinned (mobile long-press) after a short time unless user interacts
+  if (__skillTipPinned) {
+    __skillTipHideT = setTimeout(() => hideSkillTooltip(true), 4500);
+  }
+}
+
+function hideSkillTooltip(force) {
+  const tip = ensureSkillTooltipEl();
+  if (!force && __skillTipPinned) return; // keep visible if pinned
+  __skillTipPinned = false;
+  tip.style.display = "none";
+  try { clearTimeout(__skillTipHideT); } catch (e) {}
+}
+
+function attachSkillTooltip(btn, unitGetter, cdTipGetter) {
+  if (!btn || btn.__skillTipBound) return;
+  btn.__skillTipBound = true;
+
+  const getUnit = () => { try { return unitGetter ? unitGetter() : null; } catch(e){ return null; } };
+  const getCdTip = () => { try { return cdTipGetter ? cdTipGetter() : ""; } catch(e){ return ""; } };
+
+  // Desktop hover
+  btn.addEventListener("mouseenter", () => {
+    const u = getUnit(); if (!u) return;
+    showSkillTooltip(btn, u, getCdTip(), false);
+  }, { passive: true });
+
+  btn.addEventListener("mouseleave", () => {
+    hideSkillTooltip(false);
+  }, { passive: true });
+
+  // Keyboard focus
+  btn.addEventListener("focus", () => {
+    const u = getUnit(); if (!u) return;
+    showSkillTooltip(btn, u, getCdTip(), false);
+  });
+
+  btn.addEventListener("blur", () => hideSkillTooltip(false));
+
+  // Mobile long-press (touch)
+  let pressT = null;
+  let moved = false;
+
+  const clearPress = () => { if (pressT) { clearTimeout(pressT); pressT = null; } };
+
+  btn.addEventListener("touchstart", (ev) => {
+    moved = false;
+    clearPress();
+    pressT = setTimeout(() => {
+      const u = getUnit(); if (!u) return;
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch(e){}
+      showSkillTooltip(btn, u, getCdTip(), true);
+    }, 420);
+  }, { passive: true });
+
+  btn.addEventListener("touchmove", () => { moved = true; clearPress(); }, { passive: true });
+  btn.addEventListener("touchend", () => { clearPress(); }, { passive: true });
+  btn.addEventListener("touchcancel", () => { clearPress(); }, { passive: true });
+
+  // Prevent context menu from blocking long-press on some browsers
+  btn.addEventListener("contextmenu", (ev) => {
+    if (__skillTipPinned) { ev.preventDefault(); hideSkillTooltip(true); }
+  });
+
+  // Tap to dismiss if pinned
+  btn.addEventListener("click", () => {
+    if (__skillTipPinned) hideSkillTooltip(true);
+  });
+}
+
+function initSkillTooltipSystem() {
+  // Close on outside tap/click
+  document.addEventListener("pointerdown", (ev) => {
+    const tip = ensureSkillTooltipEl();
+    if (tip.style.display === "none") return;
+    const t = ev.target;
+    if (t === tip || tip.contains(t)) return;
+    // also allow clicking the button without immediately closing (handled by click)
+    hideSkillTooltip(true);
+  }, { passive: true });
+
+  // Reposition on resize/scroll
+  window.addEventListener("resize", () => {
+    try {
+      const tip = ensureSkillTooltipEl();
+      if (tip.style.display === "none") return;
+      // If we can't find the anchor reliably, just hide.
+      hideSkillTooltip(true);
+    } catch (e) {}
+  }, { passive: true });
+
+  // Bind for Story battle controls
+  try {
+    const btn = document.getElementById("btnSkill");
+    attachSkillTooltip(btn, () => state.player, () => {
+      // keep same cdTip logic used by updateUI
+      const p = state.player;
+      const playerTurn = state.turn === "player" && state.phase === "battle";
+      const cdTurns = Math.max(0, Number(p?.cooldown || 0) || 0);
+      const rtCd = (p?.skillReadyAt && p.skillReadyAt > Date.now());
+      const sil = isSilenced(p);
+      const onCd = rtCd || cdTurns > 0;
+      const hpGateOk = (p?.id !== "leiRality") || canUseLeiRalitySkill(p);
+      if (!playerTurn) return "Not your turn.";
+      if (!hpGateOk) return "LeiRality: skill can only be used at 40% HP or lower.";
+      if (sil) return "Silenced: you cannot use your skill right now.";
+      if (onCd) return `Cooldown remaining: ${rtCd ? formatSkillCd(p) : `${cdTurns} turn(s)`}`;
+      return "Ready!";
+    });
+  } catch (e) {}
+
+  // Bind for PVP docks if present
+  try {
+    const p1Btn = document.getElementById("p1Skill");
+    attachSkillTooltip(p1Btn, () => state?.pvp?.p1?.active, () => "P1 skill info");
+  } catch (e) {}
+  try {
+    const p2Btn = document.getElementById("p2Skill");
+    attachSkillTooltip(p2Btn, () => state?.pvp?.p2?.active, () => "P2 skill info");
+  } catch (e) {}
 }
 
 // =========================
@@ -897,8 +1164,10 @@ function triggerRelicbornTitanOnKill(attacker, defender, opts) {
   attacker.shieldCap = Math.max(0, Number(attacker.shieldCap || attacker.shield || attacker.def || 0)) + 5;
 
   // Health: increase max HP and heal +5 (capped)
-  attacker.maxHp = Math.max(1, Number(attacker.maxHp || 1)) + 5;
-  attacker.hp = Math.min(attacker.maxHp, Math.max(0, Number(attacker.hp || 0)) + 5);
+  if (canHeal(attacker)) {
+    gainMaxHp(attacker, 5);
+    healUnit(attacker, 5, { source: "potion" });
+  }
 
   // Armor: also grant +5 current armor (shield), respecting cap
   attacker.shield = Math.min(getShieldCap(attacker), Math.max(0, Number(attacker.shield || 0)) + 5);
@@ -1123,7 +1392,7 @@ const BASE_CARDS = [
     if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
 
     // ✅ STACKABLE: increase max HP and shield cap so gains can grow beyond current limits
-    me.maxHp = Math.max(1, Number(me.maxHp || 1) || 1) + 5;
+    if (canHeal(me)) gainMaxHp(me, 5);
     me.shieldCap = Math.max(0, Number(me.shieldCap || me.shield || me.def || 0) || 0) + 5;
 
     // Heal (blocked by Reboot Seal)
@@ -1223,7 +1492,7 @@ const UNLOCKABLE_CARD_DEFS = {
       if (dmg > 0) applyDamage(foe, dmg, { silent: true, source: "skill" });
       const gained = gainShield(me, 2);
       const healBlocked = !canHeal(me);
-      if (!healBlocked) me.hp = Math.min(me.maxHp, me.hp + 3);
+      if (!healBlocked) healUnit(me, 3, { source: "skill" });
       me.cooldown = 3;
       return { ok: true, msg: healBlocked ? `${me.name} freezes time! Enemy loses their next turn. Damage: ${dmg}. +${gained} Armor, healing blocked.` : `${me.name} freezes time! Enemy loses their next turn. Damage: ${dmg}. +${gained} Armor, +3 HP.` };
     }
@@ -1240,7 +1509,7 @@ const UNLOCKABLE_CARD_DEFS = {
     skill: (me, foe) => {
       if (me.cooldown > 0) return { ok: false, msg: `Skill is on cooldown (${me.cooldown} turns).` };
       // ✅ STACKABLE: increase max HP and shield cap so gains can grow beyond current limits
-      me.maxHp = Math.max(1, Number(me.maxHp || 1) || 1) + 5;
+    if (canHeal(me)) gainMaxHp(me, 5);
       me.shieldCap = Math.max(0, Number(me.shieldCap || me.shield || me.def || 0) || 0) + 5;
 
       const healBlocked = !canHeal(me);
@@ -1351,7 +1620,7 @@ const UNLOCKABLE_CARD_DEFS = {
       // If we were already near full and heal had little/no effect, grant permanent max HP
       const nearFull = before >= (max - 2);
       if (nearFull) {
-        me.maxHp = max + 2;
+        if (canHeal(me)) gainMaxHp(me, 2);
         me.hp = Math.min(me.maxHp, Number(me.hp || 0));
       }
 
@@ -1464,8 +1733,10 @@ novaEmpress: {
       // If enemy died, grant crown
       if (Number(foe.hp || 0) <= 0) {
         me.supernovaCrownStacks = Math.max(0, Number(me.supernovaCrownStacks || 0) || 0) + 1;
-        me.maxHp = Math.max(1, Number(me.maxHp || me.hp || 1)) + 5;
-        me.hp = Math.min(me.maxHp, Number(me.maxHp) || 0); // heal to full
+        if (canHeal(me)) {
+          gainMaxHp(me, 5);
+          me.hp = Math.min(me.maxHp, Number(me.maxHp) || 0); // heal to full
+        }
       }
 
       me.cooldown = 4;
@@ -1557,10 +1828,12 @@ astroWitch: {
 
       // +8 HP (STACKABLE): increase max HP and also increase current HP by +8 (capped at new max)
       // This is a direct max-HP growth effect and should remain stackable.
-      me.maxHp = Math.max(1, Number(me.maxHp || 1) || 1) + 8;
       const hpBefore = Math.max(0, Number(me.hp || 0) || 0);
-      me.hp = Math.min(me.maxHp, hpBefore + 8);
-      const gainedHp = me.hp - hpBefore;
+      let gainedHp = 0;
+      if (canHeal(me)) {
+        gainMaxHp(me, 8);
+        gainedHp = healUnit(me, 8, { source: "skill" });
+      }
 
       me.cooldown = 3;
       updateUI();
@@ -1603,8 +1876,10 @@ astroWitch: {
       me.atk = Math.max(0, Number(me.atk || 0) || 0) + bonusAtk;
 
       // +Life/HP (increase max HP and also heal that amount, capped)
-      me.maxHp = Math.max(1, Number(me.maxHp || 1) || 1) + bonusLife;
-      me.hp = Math.min(me.maxHp, Math.max(0, Number(me.hp || 0) || 0) + bonusLife);
+      if (canHeal(me)) {
+        gainMaxHp(me, bonusLife);
+        healUnit(me, bonusLife, { source: "skill" });
+      }
 
       // +Defense/Armor (increase shield cap and current shield, then sync DEF)
       me.shieldCap = Math.max(0, Number(me.shieldCap || me.shield || me.def || 0) || 0) + bonusDef;
@@ -1630,6 +1905,7 @@ astroWitch: {
   leiRality: {
     id: "leiRality",
     name: "LeiRality",
+    lore: "A living paradox clad in discipline and defense. LeiRality turns pain into armor and fate into law, standing unbroken even when reality itself collapses.",
     img: "cards/LeiRality.png",
     atk: 18,
     def: 22,
@@ -1670,6 +1946,7 @@ astroWitch: {
 eyJiEs: {
   id: "eyJiEs",
   name: "Ey-Ji-Es",
+  lore: "Born from a broken cooldown loop, Ey-Ji-Es feeds on delay and disruption. Every second stolen from an enemy’s skill fuels its own evolution.",
   img: "cards/eyjies.png",
   atk: 3,
   def: 5,
@@ -1711,10 +1988,10 @@ eyJiEs: {
 
       // ✅ Stackable heal ABOVE current life by increasing max HP
       const baseMax = Math.max(1, Number(me.maxHp || 1) || 1);
-      me.maxHp = baseMax + roll;
 
       const healBlocked = !canHeal(me);
       if (!healBlocked) {
+        me.maxHp = baseMax + roll;
         me.hp = Math.min(me.maxHp, Math.max(0, Number(me.hp || 0) || 0) + roll);
       } else {
         // Clamp current HP to the new max if healing is blocked
@@ -1923,8 +2200,8 @@ eyJiEs: {
 
       // HP becomes (base + roll) — NOT stackable (overwrites previous roll bonus)
       const healBlocked = !canHeal(me);
-      me.maxHp = (Number(me._rbBaseMaxHp) || 0) + roll;
       if (!healBlocked) {
+        me.maxHp = (Number(me._rbBaseMaxHp) || 0) + roll;
         // convert into life: set to full new max HP
         me.hp = Math.min(me.maxHp, Number(me.maxHp) || 0);
       } else {
@@ -2015,8 +2292,8 @@ eyJiEs: {
 
       // Life becomes (base + roll)
       const healBlocked = !canHeal(me);
-      me.maxHp = (Number(me._amBaseMaxHp) || 0) + roll;
       if (!healBlocked) {
+        me.maxHp = (Number(me._amBaseMaxHp) || 0) + roll;
         me.hp = Math.min(me.maxHp, Number(me.maxHp) || 0);
       } else {
         me.hp = Math.min(me.maxHp, Number(me.hp || 0) || 0);
@@ -2046,6 +2323,7 @@ eyJiEs: {
   awakenedMonster: {
     id: "awakenedMonster",
     name: "Awakened Monster",
+    lore: "When suppression fails, instinct takes over. The Awakened Monster remembers every wound and repays the universe in blood.",
     img: "cards/am.png",
     atk: 1200,
     def: 1200,
@@ -2068,8 +2346,8 @@ eyJiEs: {
       }
 
       const healBlocked = !canHeal(me);
-      me.maxHp = (Number(me._awBaseMaxHp) || 0) + roll;
       if (!healBlocked) {
+        me.maxHp = (Number(me._awBaseMaxHp) || 0) + roll;
         me.hp = Math.min(me.maxHp, Number(me.maxHp) || 0);
       } else {
         me.hp = Math.min(me.maxHp, Number(me.hp || 0) || 0);
@@ -2095,6 +2373,7 @@ eyJiEs: {
   omni: {
     id: "omni",
     name: "Omni",
+    lore: "The final arbiter. Omni does not fight for victory—it enforces inevitability. When judgment falls, even gods are silent.",
     img: "cards/omni.png",
     atk: 1200,
     def: 1200,
@@ -2165,8 +2444,10 @@ eyJiEs: {
         me.shieldCap = Math.max(0, Number(me.shieldCap || me.shield || me.def || 0)) + 3;
         gainShield(me, 3);
 
-        me.maxHp = Math.max(1, Number(me.maxHp || me.hp || 1)) + 3;
-        if (canHeal(me)) me.hp = Math.min(me.maxHp, Number(me.hp || 0) + 3);
+        if (canHeal(me)) {
+          gainMaxHp(me, 3);
+          healUnit(me, 3, { source: "skill" });
+        }
 
         me.img = "cards/zukinimato3.png";
       }
@@ -2226,6 +2507,7 @@ eyJiEs: {
   roque: {
     id: "roque",
     name: "Roque",
+    lore: "A gambler who cheated death one too many times. Roque bends probability, rolling destiny itself to steal strength from those who dare defeat him.",
     img: "cards/roque.png",
     atk: 8,
     def: 26,
@@ -7402,8 +7684,10 @@ function pvpApplyPotionEffectTo(p, e, potion){
     applyDamage(e, dmg, { silent: true, source: "skill", damageType: "true" });
 
     const gain = Math.max(0, Number(dmg || 0) || 0);
-    p.maxHp = Math.max(1, Number(p.maxHp || 1) || 1) + gain;
-    p.hp = Math.min(p.maxHp, (Number(p.hp || 0) || 0) + gain);
+    if (canHeal(p)) {
+      gainMaxHp(p, gain);
+      healUnit(p, gain, { source: "passive" });
+    }
     p.shield = Math.min(getShieldCap(p), (Number(p.shield || 0) || 0) + gain);
     p.def = p.shield;
 
@@ -8545,9 +8829,11 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
       defender.shield = Math.min(defender.shieldCap, Math.max(0, Number(defender.shield || 0) || 0) + foeDef);
       defender.def = defender.shield;
 
-      defender.maxHp = Math.max(1, Number(defender.maxHp || 1) || 1) + foeHp;
+      if (canHeal(defender)) {
+        gainMaxHp(defender, foeHp, { allowWhenBlocked: true });
+      }
 
-      // ✅ Respawn at FULL HP (not enemy HP / not 1+enemy HP)
+      // ✅ Respawn at FULL HP
       defender.hp = defender.maxHp;
 
       defender.roqueReviveCd = 2;
@@ -9148,8 +9434,10 @@ function spawnNextEnemy() {
   if (state.player && hasRelic("goldenHeart")) {
     const curMax = Math.max(1, Number(state.player.maxHp || 1));
     const inc = Math.max(1, Math.ceil(curMax * 0.10));
-    state.player.maxHp = curMax + inc;
-    state.player.hp = Math.min(state.player.maxHp, Number(state.player.hp || 0) + inc);
+    if (canHeal(state.player)) {
+      gainMaxHp(state.player, inc);
+      healUnit(state.player, inc, { source: "relic" });
+    }
     log(`💛 Golden Heart empowers you at stage start: +${inc} Max HP.`, "good");
     floatingDamage("player", `+${inc} MaxHP`, "good");
   }
@@ -10087,7 +10375,7 @@ if (state.turn === "player") tickStatuses(state.player);
       const isReality = cur.halakaForm === "reality";
       if (isReality) {
         // +1 Health (stackable): increase maxHp then heal 1
-        cur.maxHp = Math.max(1, Number(cur.maxHp || cur.hp || 1) || 1) + 1;
+        if (canHeal(cur)) gainMaxHp(cur, 1);
         const healed = healUnit(cur, 1, { source: "passive" });
 
         // +1 Defense (stackable): raise shield cap then gain 1 armor
@@ -10292,9 +10580,9 @@ applyDamage(e, dmg, { source: "attack", damageType: dmgType, attacker: p, attack
     // ✅ Zukinimato Form 6: growth per attack (+5 DEF/+5 HP)
     if (zukiTrue && p.zukiGrowthOnAttack) {
       gainShield(p, 5);
-      p.maxHp = Number(p.maxHp || p.hp || 0) + 5;
       if (canHeal(p)) {
-        p.hp = Math.min(p.maxHp, Number(p.hp || 0) + 5);
+        gainMaxHp(p, 5);
+        healUnit(p, 5, { source: "passive" });
       }
       updateUI();
       log(`🛡️ ${p.name} gains +5 DEF and +5 HEALTH from attacking!`, "good");
@@ -10454,9 +10742,10 @@ function applyPotionEffect(potion) {
 
     // Convert damage into HP + Defense + Max HP for player
     const gain = Math.max(0, Number(dmg || 0) || 0);
-
-    p.maxHp = Math.max(1, Number(p.maxHp || 1) || 1) + gain;
-    p.hp = Math.min(p.maxHp, (Number(p.hp || 0) || 0) + gain);
+    if (canHeal(p)) {
+      gainMaxHp(p, gain);
+      healUnit(p, gain, { source: "passive" });
+    }
 
     // Defense uses shield/def fields
     p.shield = Math.min(getShieldCap(p), (Number(p.shield || 0) || 0) + gain);
@@ -10781,7 +11070,17 @@ function renderGallery() {
       const toggle = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        wrap.classList.toggle('showLore');
+        const willOpen = !wrap.classList.contains('showLore');
+        try { closeAllLoreTooltips(); } catch(e) {}
+        // also drop any existing "raised" cards
+        document.querySelectorAll('.cardPick.loreOpen').forEach((el)=>el.classList.remove('loreOpen'));
+        if (willOpen) {
+          wrap.classList.add('showLore');
+          div.classList.add('loreOpen');
+        } else {
+          wrap.classList.remove('showLore');
+          div.classList.remove('loreOpen');
+        }
       };
       icon.addEventListener('click', toggle);
       icon.addEventListener('keydown', (e) => {
@@ -12044,6 +12343,7 @@ if (p && p.id === "leiRality" && typeof canUseLeiRalitySkill === "function" && !
 function closeAllLoreTooltips(e) {
   if (e && (e.target.closest('.infoWrap') || e.target.closest('.infoBtn'))) return;
   document.querySelectorAll('.infoWrap.showLore').forEach((w) => w.classList.remove('showLore'));
+  document.querySelectorAll('.cardPick.loreOpen').forEach((el) => el.classList.remove('loreOpen'));
 }
 
   document.addEventListener('click', closeAllLoreTooltips);
@@ -12073,6 +12373,10 @@ function closeAllLoreTooltips(e) {
   } else {
     showView("home");
   }
+
+  // 🛈 Skill hover + mobile long-press tooltip for the Use Skill button
+  try { initSkillTooltipSystem(); } catch(e) {}
+
 }
 
 // Ensure UI is wired even if the script tag is moved (e.g., into <head>).
