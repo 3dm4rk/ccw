@@ -9166,6 +9166,30 @@ function enemyDecideAction() {
 // =========================
 // MODAL
 // =========================
+// =========================
+// 💡 DEFEAT TIPS (shown on Defeat modal)
+// =========================
+const DEFEAT_TIPS = [
+  "Watch the Battle Log — it tells you exactly what hit you last.",
+  "If the enemy has armor, chip it down first or use TRUE damage.",
+  "Don’t spam skills on cooldown — plan a turn where it swings the fight.",
+  "Stun turns are free damage — use them to finish or to reset pressure.",
+  "If your HP is low, consider using Potion as soon as it’s ready.",
+  "Try a different card: some enemies counter certain builds.",
+  "Save your burst for when the enemy armor breaks.",
+  "If your damage hits 0, check debuffs and wait them out — don’t waste turns.",
+  "Defense is life early game — tankier cards help stabilize runs.",
+  "When you see a dangerous passive, play slower: defend, heal, then burst."
+];
+let __lastDefeatTipIndex = -1;
+function pickDefeatTip(){
+  if (!Array.isArray(DEFEAT_TIPS) || DEFEAT_TIPS.length === 0) return "";
+  let idx = Math.floor(Math.random() * DEFEAT_TIPS.length);
+  if (DEFEAT_TIPS.length > 1 && idx === __lastDefeatTipIndex) idx = (idx + 1) % DEFEAT_TIPS.length;
+  __lastDefeatTipIndex = idx;
+  return String(DEFEAT_TIPS[idx] || "");
+}
+
 function openModal({ title, text, stageLabel, hint, goldReward, mode }) {
   const setText = (id, val) => {
     const el = document.getElementById(id);
@@ -9176,6 +9200,20 @@ function openModal({ title, text, stageLabel, hint, goldReward, mode }) {
   setText("resultText", text);
   setText("resultStage", stageLabel);
   setText("modalHint", hint || "");
+
+  // 💡 Defeat Tip (small help text). Only show on true run defeat (Go Home).
+  const tipEl = document.getElementById("defeatTip");
+  const isRunDefeat = (mode === "defeat") && (state && state.modalAction === "home") && (/defeat/i.test(String(title||"")));
+  if (tipEl) {
+    if (isRunDefeat) {
+      const t = pickDefeatTip();
+      tipEl.textContent = t ? t : "";
+      tipEl.style.display = t ? "block" : "none";
+    } else {
+      tipEl.textContent = "";
+      tipEl.style.display = "none";
+    }
+  }
 
   // NOTE: Some builds remove the old reward/HP/shield fields from the modal.
   // Keep these assignments safe so the modal never crashes.

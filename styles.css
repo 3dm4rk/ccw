@@ -6590,3 +6590,28 @@ body.skillFlash .arenaCard::before{
     max-height: min(52vh, 420px);
   }
 }
+
+/* =========================
+   💡 Defeat Tip (small, readable, non-annoying)
+   ========================= */
+.defeatTip{
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  color: rgba(233,238,255,.86);
+  font-size: 13px;
+  line-height: 1.32;
+  letter-spacing: .1px;
+  display: none; /* toggled by JS */
+}
+.defeatTip::before{
+  content: "💡 Tip:";
+  font-weight: 1000;
+  margin-right: 6px;
+  color: rgba(255,255,255,.90);
+}
+@media (max-width: 420px){
+  .defeatTip{ font-size: 12px; padding: 7px 9px; }
+}
