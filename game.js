@@ -635,10 +635,11 @@ function applyVoidTurnStartDamage(unit) {
 }
 
 
-// ✅ NEW: Daysi Passive — Evasive Instinct
-// Every turn, there is a 50% chance to ready a dodge that will evade the next incoming hit.
-// (Uses the existing `dodge` status. For Daysi only, dodge also blocks skills.)
-function applyDaysiTurnStartPassive(unit) {
+// ✅ UPDATED: Daysi Passive — Evasive Instinct
+// Triggers AFTER Daysi performs an action (basic attack OR skill).
+// 50% chance to ready a dodge that will evade the ENEMY'S NEXT ATTACK for up to 2 turns.
+// (Uses the existing `dodge` status.)
+function applyDaysiAfterActionPassive(unit) {
   try {
     if (!unit) return;
     if (String(unit.id || "") !== "daysi") return;
@@ -647,17 +648,18 @@ function applyDaysiTurnStartPassive(unit) {
     // If already ready, don't reroll.
     if (Number(unit.dodge || 0) > 0) return;
 
-    // 50% chance each turn
+    // 50% chance after each action (attack/skill)
     if (Math.random() < 0.5) {
-      unit.dodge = 1;
+      unit.dodge = 2;
 
       // Clear, readable feedback
-      log(`💨 ${unit.name}'s passive is ready: next hit will MISS!`, (unit === state.player) ? "good" : "bad");
+      log(`💨 ${unit.name}'s passive is ready: the next enemy attack will MISS (expires in 2 turns)!`, (unit === state.player) ? "good" : "bad");
       try { floatingDamage(unit === state.player ? "player" : "enemy", "DODGE", "good"); } catch(e) {}
       updateUI();
     }
   } catch (e) {}
 }
+
 
 
 
@@ -7333,6 +7335,9 @@ function pvpBasicAttack(attacker, defender, attackerSide) {
   spawnAttackFx(attackerSide === "p1" ? "player" : "enemy", attackerSide === "p1" ? "enemy" : "player");
   applyDamage(defender, dmg, { source: "attack", damageType: "physical", attacker, attackerName: attacker.name });
 
+  // ✅ Daysi passive triggers after each action (attack)
+  try { applyDaysiAfterActionPassive(attacker); } catch(e) {}
+
   // 🪬 PVP relic triggers (shop-only relic IDs)
 try { pvpAfterAttackRelics(attackerSide, attacker, defender, dmg); } catch(e) {}
 
@@ -7374,6 +7379,10 @@ function pvpUseSkill(attacker, defender, attackerSide) {
   if (res && res.ok) {
     playSfx("sfxSkill", 0.75);
     log(res.msg, attackerSide === "p1" ? "good" : "bad");
+
+    // ✅ Daysi passive triggers after each action (skill)
+    try { applyDaysiAfterActionPassive(attacker); } catch(e) {}
+
     updateUI();
   } else if (res && res.ok === false) {
     log(res.msg || "Skill failed.", "warn");
@@ -7522,7 +7531,6 @@ function pvpEnd(side, { auto=false } = {}) {
   try {
     const curUnit = (state.turn === "player") ? state.player : state.enemy;
     applyVoidTurnStartDamage(curUnit);
-    try { applyDaysiTurnStartPassive(curUnit); } catch(e) {}
   } catch(e) {}
 
   // If void damage killed someone, resolve immediately (prevents "infinite" stalled turns)
@@ -8591,9 +8599,8 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
   }
 
   // ✅ NEW: Dodge — first incoming hit misses completely
-  // Default: blocks basic attacks only.
-  // Daysi passive: blocks BOTH attacks + skills when the dodge is ready.
-  if (defender.dodge && defender.dodge > 0 && dmg > 0 && (source === "attack" || (defender && defender.id === "daysi" && source === "skill"))) {
+  // Blocks BASIC ATTACKS only.
+  if (defender.dodge && defender.dodge > 0 && dmg > 0 && (source === "attack")) {
     defender.dodge = 0;
     log(`💨 ${defender.name} dodges the hit!`, "good");
     floatingDamage(defender === state.player ? "player" : "enemy", "MISS", "good");
@@ -10393,7 +10400,6 @@ if (state.turn === "player") tickStatuses(state.player);
   try {
     const curVoid = state.turn === "player" ? state.player : state.enemy;
     applyVoidTurnStartDamage(curVoid);
-    try { applyDaysiTurnStartPassive(curVoid); } catch (e) {}
     if (checkWin()) return;
   } catch (e) {}
 
@@ -10526,6 +10532,10 @@ function enemyAI() {
           log(`🌙 Constellation Curse extends ${e.name}'s cooldown by +1.`, "warn");
         }
         playSfx("sfxSkill", 0.75);
+
+        // ✅ Daysi passive triggers after each action (skill)
+        try { applyDaysiAfterActionPassive(e); } catch(e) {}
+
         updateUI();
         // ✅ If the skill ended the fight, stop here. Otherwise continue to the normal attack.
         if (checkWin()) return;
@@ -10549,6 +10559,9 @@ playSfx("sfxAttack", 0.75);
 
 spawnAttackFx("enemy", "player");
 applyDamage(p, dmg, { source: "attack", damageType: dmgType, attacker: e, attackerName: e.name });
+
+  // ✅ Daysi passive triggers after each action (attack)
+  try { applyDaysiAfterActionPassive(e); } catch(e) {}
 
   if (!checkWin()) nextTurn();
   } catch (e) {
@@ -10629,6 +10642,9 @@ applyDamage(e, dmg, { source: "attack", damageType: dmgType, attacker: p, attack
         log(`🪬 Vampire Fang tried to heal, but Reboot Seal blocked it!`, "warn");
       }
     }
+
+    // ✅ Daysi passive triggers after each action (attack)
+    try { applyDaysiAfterActionPassive(p); } catch(e) {}
   };
 
   doOneAttack("");
@@ -10694,6 +10710,9 @@ function playerSkill() {
 
   playSfx("sfxSkill", 0.8);
   log(res.msg, "good", { src: p.name, tgt: e.name, kind: "skill" });
+
+  // ✅ Daysi passive triggers after each action (skill)
+  try { applyDaysiAfterActionPassive(p); } catch(e) {}
 
   updateUI();
   if (!checkWin()) nextTurn();
