@@ -635,6 +635,33 @@ function applyVoidTurnStartDamage(unit) {
 }
 
 
+// ✅ NEW: Daysi Passive — Evasive Instinct
+// Every turn, there is a 50% chance to ready a dodge that will evade the next incoming hit.
+// (Uses the existing `dodge` status. For Daysi only, dodge also blocks skills.)
+function applyDaysiTurnStartPassive(unit) {
+  try {
+    if (!unit) return;
+    if (String(unit.id || "") !== "daysi") return;
+    if (Number(unit.hp || 0) <= 0) return;
+
+    // If already ready, don't reroll.
+    if (Number(unit.dodge || 0) > 0) return;
+
+    // 50% chance each turn
+    if (Math.random() < 0.5) {
+      unit.dodge = 1;
+
+      // Clear, readable feedback
+      log(`💨 ${unit.name}'s passive is ready: next hit will MISS!`, (unit === state.player) ? "good" : "bad");
+      try { floatingDamage(unit === state.player ? "player" : "enemy", "DODGE", "good"); } catch(e) {}
+      updateUI();
+    }
+  } catch (e) {}
+}
+
+
+
+
 // =========================
 // 🌙 Constellation Curse helper (temporary -ATK + cooldown extension)
 // =========================
@@ -7495,6 +7522,7 @@ function pvpEnd(side, { auto=false } = {}) {
   try {
     const curUnit = (state.turn === "player") ? state.player : state.enemy;
     applyVoidTurnStartDamage(curUnit);
+    try { applyDaysiTurnStartPassive(curUnit); } catch(e) {}
   } catch(e) {}
 
   // If void damage killed someone, resolve immediately (prevents "infinite" stalled turns)
@@ -8562,10 +8590,12 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
     return 0;
   }
 
-  // ✅ NEW: Dodge — first incoming ATTACK misses completely
-  if (defender.dodge && defender.dodge > 0 && dmg > 0 && source === "attack") {
+  // ✅ NEW: Dodge — first incoming hit misses completely
+  // Default: blocks basic attacks only.
+  // Daysi passive: blocks BOTH attacks + skills when the dodge is ready.
+  if (defender.dodge && defender.dodge > 0 && dmg > 0 && (source === "attack" || (defender && defender.id === "daysi" && source === "skill"))) {
     defender.dodge = 0;
-    log(`💨 ${defender.name} dodges the attack!`, "good");
+    log(`💨 ${defender.name} dodges the hit!`, "good");
     floatingDamage(defender === state.player ? "player" : "enemy", "MISS", "good");
     updateUI();
     return 0;
@@ -9591,8 +9621,10 @@ function renderStatusIcons(f, containerId) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "statusIconBtn";
-    btn.setAttribute("aria-label", `${s.name} (${s.count})`);
-    btn.innerHTML = `<span class="statusIconEmoji">${s.icon}</span><span class="statusIconCount">${s.count}</span>`;
+    const displayCount = (s.key === "dodge" && f && f.id === "daysi") ? "READY" : String(s.count);
+    const labelName = (s.key === "dodge" && f && f.id === "daysi") ? "Dodge Passive" : s.name;
+    btn.setAttribute("aria-label", `${labelName} (${displayCount})`);
+    btn.innerHTML = `<span class="statusIconEmoji">${s.icon}</span><span class="statusIconCount">${displayCount}</span>`;
     const onShow = (ev) => {
       const x = (ev && (ev.clientX || (ev.touches && ev.touches[0] && ev.touches[0].clientX))) || 20;
       const y = (ev && (ev.clientY || (ev.touches && ev.touches[0] && ev.touches[0].clientY))) || 20;
@@ -10361,6 +10393,7 @@ if (state.turn === "player") tickStatuses(state.player);
   try {
     const curVoid = state.turn === "player" ? state.player : state.enemy;
     applyVoidTurnStartDamage(curVoid);
+    try { applyDaysiTurnStartPassive(curVoid); } catch (e) {}
     if (checkWin()) return;
   } catch (e) {}
 
