@@ -2213,6 +2213,8 @@ button, .btn, .tabBtn, .miniTab, .infoBtn{ touch-action: manipulation; }
 .floatingDmg.good{ color: rgba(125,255,178,.95); }
 .floatingDmg.bad{ color: rgba(255,125,125,.95); }
 .floatingDmg.warn{ color: rgba(255,210,125,.95); }
+.floatingDmg.passive{ font-size: 14px; letter-spacing: .6px; text-transform: uppercase; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+
 
 @keyframes floatUp {
   0%{ opacity:0; transform: translate(-50%,-40%) scale(.98); }
@@ -6615,3 +6617,41 @@ body.skillFlash .arenaCard::before{
 @media (max-width: 420px){
   .defeatTip{ font-size: 12px; padding: 7px 9px; }
 }
+
+
+/* 🛰️ Passive clarity: quick pulse on the card when a passive triggers */
+.fighterCard.passivePulse{
+  animation: passivePulse .62s ease-out forwards;
+}
+@keyframes passivePulse{
+  0%{ filter: saturate(1) brightness(1); transform: translateZ(0) scale(1); }
+  35%{ filter: saturate(1.35) brightness(1.12); transform: translateZ(0) scale(1.02); }
+  100%{ filter: saturate(1) brightness(1); transform: translateZ(0) scale(1); }
+}
+
+
+/* 🍀 Lucky Cat passive proc: quick readable pulse on the fighter image frame */
+.luckyCatProcFx{
+  animation: luckyCatProcPulse 650ms ease-out;
+  box-shadow: 0 0 0.9rem rgba(255, 225, 120, 0.35), 0 0 1.8rem rgba(255, 225, 120, 0.22);
+  outline: 2px solid rgba(255, 225, 120, 0.35);
+  outline-offset: 2px;
+}
+@keyframes luckyCatProcPulse{
+  0%   { transform: scale(1.00); filter: saturate(1.0) brightness(1.0); }
+  35%  { transform: scale(1.02); filter: saturate(1.15) brightness(1.08); }
+  100% { transform: scale(1.00); filter: saturate(1.0) brightness(1.0); }
+}
+
+.patrickKillProcFx{
+  animation: patrickKillProcPulse 700ms ease-out;
+  box-shadow: 0 0 0.9rem rgba(255, 255, 255, 0.22), 0 0 1.8rem rgba(120, 120, 120, 0.18);
+  outline: 2px solid rgba(255, 255, 255, 0.22);
+  outline-offset: 2px;
+}
+@keyframes patrickKillProcPulse{
+  0%   { transform: scale(1.00); filter: saturate(1.0) brightness(1.0); }
+  35%  { transform: scale(1.02); filter: saturate(1.1) brightness(1.08); }
+  100% { transform: scale(1.00); filter: saturate(1.0) brightness(1.0); }
+}
+

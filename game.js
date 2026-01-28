@@ -664,6 +664,51 @@ function applyDaysiAfterActionPassive(unit) {
 
 
 
+
+// ✅ UPDATED: Lucky Cat Passive — Fortune Theft
+// Triggers AFTER Lucky Cat performs an action (basic attack OR skill).
+// 50% chance to gain +20% of the enemy's CURRENT ATK (added to Lucky Cat's ATK).
+// Adds a clear status icon + quick glow so players can tell it procced without reading logs.
+function applyLuckyCatAfterActionPassive(unit, foe) {
+  try {
+    if (!unit || !foe) return;
+    if (String(unit.id || "") !== "luckyCat") return;
+    if (Number(unit.hp || 0) <= 0) return;
+    if (Number(foe.hp || 0) <= 0) return;
+
+    // 50% chance after each action (attack/skill)
+    if (Math.random() < 0.5) {
+      const foeAtk = Math.max(0, Number(foe.atk || 0) || 0);
+      const gained = Math.max(1, Math.floor(foeAtk * 0.20));
+      unit.atk = (Number(unit.atk || 0) || 0) + gained;
+
+      // Status icon (shows "PROC" for 1 turn)
+      unit.luckyCatProc = 1;
+
+      // Clear, readable feedback
+      const side = (unit === state.player) ? "player" : "enemy";
+      const tone = (unit === state.player) ? "good" : "bad";
+
+      try { floatingDamage(side, `🍀 +${gained} ATK`, tone); } catch(e) {}
+      try { luckyCatProcFx(side); } catch(e) {}
+
+      log(`🍀 ${unit.name}'s passive triggers! Gained +${gained} ATK from ${foe.name}.`, tone);
+      updateUI();
+    }
+  } catch (e) {}
+}
+
+// Quick visual pulse on the fighter frame
+function luckyCatProcFx(side) {
+  const id = (side === "enemy") ? "eFrame" : "pFrame";
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add("luckyCatProcFx");
+  setTimeout(() => { try { el.classList.remove("luckyCatProcFx"); } catch(e) {} }, 650);
+}
+
+
+
 // =========================
 // 🌙 Constellation Curse helper (temporary -ATK + cooldown extension)
 // =========================
@@ -1348,7 +1393,13 @@ const BASE_CARDS = [
         me.atk = Math.max(0, Number(me.atk || 0) + 3);
       }
 
-      me.cooldown = 3;
+      // Set cooldown normally, but don't override the on-kill passive reset.
+      if (!me._patrickKillResetThisAction) {
+        me.cooldown = 3;
+      } else {
+        me.cooldown = 0;
+        me._patrickKillResetThisAction = false;
+      }
       return { ok: true, msg: `${me.name} uses Execution Protocol! 3 hits (2, 2, 6 TRUE).${(pct > 0 && pct < 0.25) ? " Gains +3 ATK!" : ""}` };
     }
   },
@@ -8510,6 +8561,7 @@ function applyDamage(defender, dmg, opts = {}) {
   defender.shield = Number(defender.shield);
   if (!Number.isFinite(defender.shield)) defender.shield = 0;
 
+  const __beforeHp = Number(defender.hp || 0);
 
   // 🎲 Roque safety: snapshot last alive stats so Loaded Fate can revive cleanly
   // Fixes rare bug where Roque's HP/DEF could desync and appear to "copy" the enemy's HP.
@@ -8667,6 +8719,12 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
   defender.def = Number(defender.shield || 0);
   // LeiRality: convert missing HP into extra DEF (dynamic)
   applyLeiRalityMissingHpDef(defender);
+
+  // 💀 On-kill passives
+  // We mark lethal hits here, but only *trigger* after revive mechanics resolve,
+  // so revives (Phoenix Ember / Roque) don't incorrectly count as kills.
+  const __lethalHit = (__beforeHp > 0 && Number(defender.hp || 0) <= 0);
+
 
   // How much damage actually landed this hit (armor + HP)
   const actualTaken = Math.max(0, Number(absorbed || 0) + Number(hpLoss || 0));
@@ -8880,6 +8938,13 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
     log(`🪬 Spiked Armor reflects 1 damage!`, "good");
     floatingDamage("enemy", "-1", "warn");
   }
+  // 💀 Trigger on-kill passives only if defender is still dead after revive mechanics
+  if (__lethalHit && Number(defender.hp || 0) <= 0) {
+    const attacker = opts.attacker || null;
+    if (attacker) {
+      applyPatrickKillPassive(attacker, defender, source);
+    }
+  }
 
   updateUI();
 }
@@ -8925,6 +8990,8 @@ function tickStatuses(f) {
   if (f.sanctuary > 0) f.sanctuary -= 1;
   if (f.parry > 0) f.parry -= 1;
   if (f.dodge > 0) f.dodge -= 1;
+  if (f.luckyCatProc > 0) f.luckyCatProc -= 1;
+  if (f.patrickKillProc > 0) f.patrickKillProc -= 1;
   if (f.immunity > 0) f.immunity -= 1;
   if (f.counterStance > 0) f.counterStance -= 1;
   if (f.mark > 0) f.mark -= 1;
@@ -9546,6 +9613,9 @@ const STATUS_DEFS = [
   { key: "dodge", name: "Dodge", icon: "🏃", desc: "Chance to evade an incoming hit." },
   { key: "voidAnchor", name: "Void Anchor", icon: "🌀", desc: "Special void effect (limits recovery / movement depending on enemy)." },
   { key: "constellationCurse", name: "Constellation Curse", icon: "🌙", desc: "Temporary attack down and/or cooldown extension." },
+  { key: "spacePatrolReady", name: "Space Patrol Ready", icon: "🛰️", desc: "Passive will trigger next turn: deals TRUE damage equal to half of current ATK (ATK ÷ 2), then gains +1 DEF and +1 HP." },
+  { key: "luckyCatProc", name: "Lucky Cat Proc", icon: "🍀", desc: "Lucky Cat passive just triggered: gained ATK from the enemy after attacking or using a skill." },
+  { key: "patrickKillProc", name: "Destroyer Proc", icon: "💀", desc: "Patrick the Destroyer passive triggered on kill: cooldown reset and gained +1 DEF and +1 HP." },
 ];
 
 function getStatusCount(f, key) {
@@ -9628,9 +9698,12 @@ function renderStatusIcons(f, containerId) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "statusIconBtn";
-    const displayCount = (s.key === "dodge" && f && f.id === "daysi") ? "READY" : String(s.count);
-    const labelName = (s.key === "dodge" && f && f.id === "daysi") ? "Dodge Passive" : s.name;
-    btn.setAttribute("aria-label", `${labelName} (${displayCount})`);
+    const isDaysiDodge = (s.key === "dodge" && f && f.id === "daysi");
+    const isSpacePatrolReady = (s.key === "spacePatrolReady" && f && f.id === "spacePatron");
+    const isLuckyCatProc = (s.key === "luckyCatProc" && f && f.id === "luckyCat");
+    const isPatrickKillProc = (s.key === "patrickKillProc" && f && f.id === "patrickDestroyer");
+    const displayCount = (isDaysiDodge || isSpacePatrolReady) ? "READY" : ((isLuckyCatProc || isPatrickKillProc) ? "PROC" : String(s.count));
+    const labelName = isDaysiDodge ? "Dodge Passive" : (isSpacePatrolReady ? "Space Patrol Passive" : (isLuckyCatProc ? "Lucky Cat Passive" : (isPatrickKillProc ? "Destroyer Passive" : s.name)));
     btn.innerHTML = `<span class="statusIconEmoji">${s.icon}</span><span class="statusIconCount">${displayCount}</span>`;
     const onShow = (ev) => {
       const x = (ev && (ev.clientX || (ev.touches && ev.touches[0] && ev.touches[0].clientX))) || 20;
@@ -9718,6 +9791,61 @@ function applyArenaBackground() {
   const bg = getBackgroundDef(bid);
   arena.style.setProperty("--arenaBg", `url("${bg.url}")`);
   arena.dataset.bg = bg.id;
+}
+
+
+
+// 💀 Patrick the Destroyer passive:
+// Every time Patrick kills an enemy (via ATTACK or SKILL), reset his cooldown and gain +1 DEF and +1 HP.
+// Adds a clear status icon + quick pulse so players can tell it procced without reading logs.
+function applyPatrickKillPassive(attacker, defender, source) {
+  try {
+    if (!attacker || !defender) return;
+    if (String(attacker.id || "") !== "patrickDestroyer") return;
+
+    const src = String(source || "").toLowerCase();
+    if (src !== "attack" && src !== "skill") return;
+
+    // Trigger visual indicator (status icon)
+    attacker.patrickKillProc = Math.max(Number(attacker.patrickKillProc || 0) || 0, 1);
+
+    // Reset cooldown immediately
+    attacker.cooldown = 0;
+    attacker._patrickKillResetThisAction = true;
+
+    // +1 DEF (armor) and +1 HP (max + current heal if not blocked)
+    gainShield(attacker, 1);
+
+    attacker.maxHp = Math.max(1, Number(attacker.maxHp || attacker.hp || 1) + 1);
+    if (Number(attacker.rebootSeal || 0) <= 0) {
+      attacker.hp = Math.min(attacker.maxHp, Number(attacker.hp || 0) + 1);
+    } else {
+      // Reboot Seal blocks healing; still increase max HP
+      attacker.hp = Math.min(attacker.maxHp, Number(attacker.hp || 0));
+    }
+
+    // FX: pulse the fighter card + floating "PROC" so it's obvious
+    const side = (attacker === state.player) ? "player" : ((attacker === state.enemy) ? "enemy" : null);
+    if (side) {
+      pulsePassive(side);
+      floatingDamage(side, "💀 PROC", "good", { quiet: true });
+    }
+
+    updateUI();
+  } catch (e) {}
+}
+
+
+function pulsePassive(side) {
+  try {
+    const cardId = (side === "enemy") ? "enemyCard" : "playerCard";
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.classList.remove("passivePulse");
+    void card.offsetWidth;
+    card.classList.add("passivePulse");
+    setTimeout(() => { try { card.classList.remove("passivePulse"); } catch(e){} }, 620);
+  } catch (e) {}
 }
 
 function flashArenaOnSkill() {
@@ -10391,6 +10519,55 @@ if (state.turn === "player") tickStatuses(state.player);
     }
   } catch (e) {}
 
+
+  // ✅ Space Patrol passive: every 2 turns, deal TRUE damage equal to half of current ATK (ATK ÷ 2),
+  // and gain +1 DEF and +1 Health.
+  try {
+    const cur = state.turn === "player" ? state.player : state.enemy;
+    const foe = state.turn === "player" ? state.enemy : state.player;
+    if (cur && cur.id === "spacePatron" && Number(cur.hp || 0) > 0 && foe && Number(foe.hp || 0) > 0) {
+      cur.spacePatrolTurns = Number(cur.spacePatrolTurns || 0) + 1;
+      // ✅ Show a clear status icon when the passive is "charged" (will trigger next turn)
+      cur.spacePatrolReady = (cur.spacePatrolTurns % 2 === 1) ? 1 : 0;
+      if (cur.spacePatrolTurns % 2 === 0) {
+        cur.spacePatrolReady = 0; // consuming the charge
+
+        // TRUE damage = floor(current ATK / 2), min 1
+        let dmg = Math.floor(Math.max(0, Number(cur.atk || 0) || 0) / 2);
+        if (dmg < 1) dmg = 1;
+
+        applyDamage(foe, dmg, { source: "passive", damageType: "true", attacker: cur, attackerName: cur.name });
+
+        // +1 Health (stackable): increase maxHp, then try to heal 1 (can be blocked by Reboot Seal)
+        cur.maxHp = Math.max(1, Number(cur.maxHp || cur.hp || 1) || 1) + 1;
+        const healed = healUnit(cur, 1, { source: "passive" });
+
+        // +1 DEF (stackable): increase shield cap, then gain 1 armor (can be blocked by Time Lock)
+        let gained = 0;
+        if (canGainArmor(cur)) {
+          cur.shieldCap = Math.max(0, Number(cur.shieldCap ?? cur.shield ?? cur.def ?? 0) || 0) + 1;
+          gained = gainShield(cur, 1);
+        }
+
+        // Feedback (make it obvious without reading logs)
+        try {
+          const curSide = (cur === state.player) ? "player" : "enemy";
+          floatingDamage(curSide, `🛰️ PASSIVE!`, "passive", { dur: 1100, clearFirst: false });
+          pulsePassive(curSide);
+        } catch (e) {}
+
+        // Feedback
+        try {
+          floatingDamage((foe === state.player) ? "player" : "enemy", `☄️ -${dmg}`, "warn");
+        } catch (e) {}
+
+        const defNote = canGainArmor(cur) ? `+${gained} DEF` : `DEF gain blocked`;
+        const hpNote = healed > 0 ? `+${healed} HP` : `HP gain blocked`;
+        log(`🚓 ${cur.name}'s passive triggers! Deals ${dmg} TRUE damage to ${foe.name}. ${defNote}, ${hpNote}.`, state.turn === "player" ? "good" : "bad");
+      }
+    }
+  } catch (e) {}
+
   // ✅ Status effects (poison/debuff) can kill — resolve win/lose immediately
   if (checkWin()) return;
 
@@ -10535,6 +10712,8 @@ function enemyAI() {
 
         // ✅ Daysi passive triggers after each action (skill)
         try { applyDaysiAfterActionPassive(e); } catch(e) {}
+        // ✅ Lucky Cat passive triggers after each action (skill)
+        try { applyLuckyCatAfterActionPassive(e, p); } catch(e) {}
 
         updateUI();
         // ✅ If the skill ended the fight, stop here. Otherwise continue to the normal attack.
@@ -10562,6 +10741,8 @@ applyDamage(p, dmg, { source: "attack", damageType: dmgType, attacker: e, attack
 
   // ✅ Daysi passive triggers after each action (attack)
   try { applyDaysiAfterActionPassive(e); } catch(e) {}
+  // ✅ Lucky Cat passive triggers after each action (attack)
+  try { applyLuckyCatAfterActionPassive(e, p); } catch(e) {}
 
   if (!checkWin()) nextTurn();
   } catch (e) {
@@ -10645,6 +10826,8 @@ applyDamage(e, dmg, { source: "attack", damageType: dmgType, attacker: p, attack
 
     // ✅ Daysi passive triggers after each action (attack)
     try { applyDaysiAfterActionPassive(p); } catch(e) {}
+    // ✅ Lucky Cat passive triggers after each action (attack)
+    try { applyLuckyCatAfterActionPassive(p, e); } catch(e) {}
   };
 
   doOneAttack("");
@@ -10713,6 +10896,8 @@ function playerSkill() {
 
   // ✅ Daysi passive triggers after each action (skill)
   try { applyDaysiAfterActionPassive(p); } catch(e) {}
+  // ✅ Lucky Cat passive triggers after each action (skill)
+  try { applyLuckyCatAfterActionPassive(p, e); } catch(e) {}
 
   updateUI();
   if (!checkWin()) nextTurn();
