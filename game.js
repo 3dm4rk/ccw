@@ -99,7 +99,7 @@ const CARD_RARITY = {
   leiRality: "Legendary",
 
   // Redeem-only
-  roque: "Epic",
+  stakesStaker: "Epic",
 };
 
 const RARITY_ORDER = ["Common","Rare","Epic","Mythical","Legendary","Cosmic"];
@@ -277,7 +277,7 @@ function ensureProfileDefaults() {
 function canGainArmor(f) {
   // Time Lock blocks armor gain
   if (f && f.noArmorGain && f.noArmorGain > 0) return false;
-  // 🎲 Roque Dice Roll: while DEF is converted into ATK, block ANY armor gain to prevent spikes.
+  // 🎲 Stakes Staker Dice Roll: while DEF is converted into ATK, block ANY armor gain to prevent spikes.
   if (f && f.diceRollTurns && f.diceRollTurns > 0) return false;
   return true;
 }
@@ -1017,7 +1017,7 @@ function getPassiveHoverLines(unit) {
       lines.push("If an enemy uses defense-penetration/ignore-defense skills, their total ATK is halved.");
       lines.push("Missing HP converts into additional DEF.");
       lines.push("Each time LeiRality defeats an enemy, remaining HP is doubled.");
-    } else if (id === "roque") {
+    } else if (id === "stakesStaker") {
       lines.push("Upon death, has a chance to resurrect (revive). When revived, it gains stats from the enemy (battle-only).");
     } else if (id === "daysi") {
       lines.push("Every turn, there is a 50% chance to trigger a Dodge effect, allowing Daysi to evade any incoming attack.");
@@ -2809,11 +2809,11 @@ eyJiEs: {
 
 
   // 🎁 Redeem-only: ROQUE
-  roque: {
-    id: "roque",
-    name: "Roque",
-    lore: "A gambler who cheated death one too many times. Roque bends probability, rolling destiny itself to steal strength from those who dare defeat him.",
-    img: "cards/roque.png",
+  stakesStaker: {
+    id: "stakesStaker",
+    name: "Stakes Staker",
+    lore: "A gambler who cheated death one too many times. Stakes Staker bends probability, rolling destiny itself to steal strength from those who dare defeat him.",
+    img: "cards/stakesStaker.png",
     atk: 8,
     def: 26,
     hp: 25,
@@ -4703,7 +4703,8 @@ function redeemCodeApply(rawInput) {
     "YROL": { type: "card", id: "yrol" },
     "ABARSKIE": { type: "card", id: "abarskie" },
 
-    "ROQUE": { type: "card", id: "roque" },
+    "STAKESSTAKER": { type: "card", id: "stakesStaker" },
+    "ROQUE": { type: "card", id: "stakesStaker" }, // alias (backward compatible)
 
     
     // 💰 Free Gold
@@ -8842,10 +8843,10 @@ function applyDamage(defender, dmg, opts = {}) {
 
   const __beforeHp = Number(defender.hp || 0);
 
-  // 🎲 Roque safety: snapshot last alive stats so Loaded Fate can revive cleanly
-  // Fixes rare bug where Roque's HP/DEF could desync and appear to "copy" the enemy's HP.
-  if (defender && defender.id === "roque" && Number(defender.hp || 0) > 0) {
-    defender._roqueLastAlive = {
+  // 🎲 Stakes Staker safety: snapshot last alive stats so Loaded Fate can revive cleanly
+  // Fixes rare bug where Stakes Staker's HP/DEF could desync and appear to "copy" the enemy's HP.
+  if (defender && defender.id === "stakesStaker" && Number(defender.hp || 0) > 0) {
+    defender._stakesStakerLastAlive = {
       atk: Math.max(0, Number(defender.atk || 0) || 0),
       shield: Math.max(0, Number(defender.shield || 0) || 0),
       shieldCap: Math.max(0, Number((defender.shieldCap != null ? defender.shieldCap : defender.shield) || 0) || 0),
@@ -9001,7 +9002,7 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
 
   // 💀 On-kill passives
   // We mark lethal hits here, but only *trigger* after revive mechanics resolve,
-  // so revives (Phoenix Ember / Roque) don't incorrectly count as kills.
+  // so revives (Phoenix Ember / Stakes Staker) don't incorrectly count as kills.
   const __lethalHit = (__beforeHp > 0 && Number(defender.hp || 0) <= 0);
 
 
@@ -9131,17 +9132,17 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
     floatingDamage("player", `🔥 +${defender.hp}`, "good");
   }
 
-  // 🎲 Roque passive: Loaded Fate (50% revive, then steal enemy current stats) — 2-turn cooldown
+  // 🎲 Stakes Staker passive: Loaded Fate (50% revive, then steal enemy current stats) — 2-turn cooldown
   // ✅ Fixes:
-  // 1) Prevent Roque HP from appearing to "copy" enemy HP by reviving to FULL HP (its own maxHp) after applying gains.
-  // 2) Ensure revive restores Roque's CURRENT stats from before death (so it respawns "with full stats") then applies steals.
+  // 1) Prevent Stakes Staker HP from appearing to "copy" enemy HP by reviving to FULL HP (its own maxHp) after applying gains.
+  // 2) Ensure revive restores Stakes Staker's CURRENT stats from before death (so it respawns "with full stats") then applies steals.
   if (
     state.phase === "battle" &&
     actualTaken > 0 &&
     Number(defender.hp) <= 0 &&
     defender &&
-    defender.id === "roque" &&
-    !(Number(defender.roqueReviveCd || 0) > 0)
+    defender.id === "stakesStaker" &&
+    !(Number(defender.stakesStakerReviveCd || 0) > 0)
   ) {
     if (Math.random() < 0.5) {
       // Determine the opponent whose stats will be stolen
@@ -9151,8 +9152,8 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
       const foeDef = Math.max(0, Number((foeUnit && (foeUnit.def ?? foeUnit.shield)) || 0) || 0);
       const foeHp  = Math.max(0, Number(foeUnit && foeUnit.hp || 0) || 0);
 
-      // Restore Roque's last alive baseline (so revive comes back with FULL stats)
-      const snap = defender._roqueLastAlive || null;
+      // Restore Stakes Staker's last alive baseline (so revive comes back with FULL stats)
+      const snap = defender._stakesStakerLastAlive || null;
 
       const baseAtk = snap ? Math.max(0, Number(snap.atk || 0) || 0) : Math.max(0, Number(defender.atk || 0) || 0);
       const baseCap = snap ? Math.max(0, Number(snap.shieldCap || 0) || 0) : Math.max(0, Number(defender.shieldCap ?? defender.shield ?? 0) || 0);
@@ -9178,7 +9179,7 @@ if (fatigueAppliesToSource(source) && dmg > 0) {
       // ✅ Respawn at FULL HP (not enemy HP / not 1+enemy HP)
       defender.hp = defender.maxHp;
 
-      defender.roqueReviveCd = 2;
+      defender.stakesStakerReviveCd = 2;
 
       const side = defender === state.player ? "player" : "enemy";
       try { spawnReviveFx(side, true); } catch (e) {}
@@ -9284,7 +9285,7 @@ function tickStatuses(f) {
   if (f.mark > 0) f.mark -= 1;
   if (f.hellBrand > 0) f.hellBrand -= 1;
 
-  // 🎲 Roque: Dice Roll (legacy cleanup)
+  // 🎲 Stakes Staker: Dice Roll (legacy cleanup)
 // Older versions used a temporary DEF->ATK conversion. New behavior is permanent stacking,
 // so if a save file still has these timers, just clear them safely without reverting stats.
   if (f.diceRollTurns > 0 || f._diceRollStoredDef) {
@@ -9292,8 +9293,8 @@ function tickStatuses(f) {
     f._diceRollStoredDef = 0;
   }
 
-  // 🎲 Roque: Loaded Fate revive cooldown
-  if (f.roqueReviveCd > 0) f.roqueReviveCd -= 1;
+  // 🎲 Stakes Staker: Loaded Fate revive cooldown
+  if (f.stakesStakerReviveCd > 0) f.stakesStakerReviveCd -= 1;
 
   // ✅ Constellation Curse tick (restore ATK when it ends)
   if (f.constellationCurse > 0) {
@@ -13180,7 +13181,7 @@ const PATCH_NOTES = [
   highlights: [
     "Cosmo will now have a 6-turn cooldown.",
     "Ey-Ji-Es now deals true damage based on its current ATK (instead of a flat 5).",
-    "Roque bug fixed: it will no longer change/mimic the enemy’s current HP.",
+    "Stakes Staker bug fixed: it will no longer change/mimic the enemy’s current HP.",
     "Card panel UI updated for easier checking.",
     "Round 30 final effect now only covers the Player Fighter Card and Enemy Fighter Card (not the whole screen).",
     "Nerf: after Cosmo Secret’s passive triggers, it now has a 2-turn cooldown.",
@@ -13197,7 +13198,7 @@ const PATCH_NOTES = [
     "Full battle flow cleanup: actions are now safely locked while resolving to prevent freezes and double-taps.",
     "Battle recovery now reliably releases the lock if any error happens (no more soft-lock).",
     "Floating damage/ability messages are now queued per card (readable, vanish 1-by-1, and cleared on new actions).",
-    "Roque stability: extra guards prevent sudden DEF/Armor spikes during Dice Roll and other conversions.",
+    "Stakes Staker stability: extra guards prevent sudden DEF/Armor spikes during Dice Roll and other conversions.",
     "Mobile performance: heavy background FX automatically pause during battle on low-power devices."
   ]
 },
@@ -13272,7 +13273,7 @@ const PATCH_NOTES = [
       "Fixed battle soft-lock: Skill now always releases the action lock when it doesn’t end your turn (cooldown / silenced / blocked).",
       "Buttons now disable while an action is processing so taps never feel ‘frozen’.",
       "Battle flow recovery improved: if anything errors, control returns to the player instead of locking the UI.",
-      "Roque Dice Roll reworked: successful rolls permanently add converted DEF to ATK (stackable) and grant +4 DEF (stackable).",
+      "Stakes Staker Dice Roll reworked: successful rolls permanently add converted DEF to ATK (stackable) and grant +4 DEF (stackable).",
     ]
   },
   {
@@ -13281,7 +13282,7 @@ const PATCH_NOTES = [
     highlights: [
       "Battle Flow Cleanup: actions are now locked safely during animations/AI so battles don’t freeze from double taps.",
       "Mobile Performance: smoother battles by batching log rendering + preventing duplicate enemy timers.",
-      "Roque Stabilization: Dice Roll armor no longer spikes during normal attacks (armor gain is blocked while DEF is converted, and DEF restores cleanly)."
+      "Stakes Staker Stabilization: Dice Roll armor no longer spikes during normal attacks (armor gain is blocked while DEF is converted, and DEF restores cleanly)."
     ],
     changes: [
       "Added a global battle action lock to prevent overlapping inputs.",
@@ -13289,7 +13290,7 @@ const PATCH_NOTES = [
       "Battle log rendering is batched per frame to reduce mobile jank."
     ],
     fixes: [
-      "Fixed Roque 'armor suddenly increases' bug after normal attacks when Dice Roll ends.",
+      "Fixed Stakes Staker 'armor suddenly increases' bug after normal attacks when Dice Roll ends.",
       "Fixed rare soft-locks caused by errors or multiple queued turns (auto-recover keeps your buttons usable).",
       "Reduced mobile lag by limiting forced layouts during rapid log spam."
     ],
@@ -13320,15 +13321,15 @@ const PATCH_NOTES = [
     ]
   },
   {
-    version: "redeem-roque",
+    version: "redeem-stakes-staker",
     date: "2026-01-26",
     highlights: [
-      "Added new redeem-only card: Roque (Magician)."
+      "Added new redeem-only card: Stakes Staker (Magician)."
     ],
     changes: [
-      "Redeem code added: ROQUE → unlocks Roque (one-time use).",
-      "Roque Ability: Dice Roll — 50% chance to convert current DEF into ATK for 2 turns (cooldown 2 turns).",
-      "Roque Passive: Loaded Fate — on death, 50% chance to resurrect and add the enemy's CURRENT ATK/DEF/HP to Roque's current stats (2-turn cooldown)."
+      "Redeem code added: ROQUE → unlocks Stakes Staker (one-time use).",
+      "Stakes Staker Ability: Dice Roll — 50% chance to convert current DEF into ATK for 2 turns (cooldown 2 turns).",
+      "Stakes Staker Passive: Loaded Fate — on death, 50% chance to resurrect and add the enemy's CURRENT ATK/DEF/HP to Stakes Staker's current stats (2-turn cooldown)."
     ],
     fixes: [],
     notes: [
