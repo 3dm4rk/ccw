@@ -7658,18 +7658,50 @@ function pvpBasicAttack(attacker, defender, attackerSide) {
     return;
   }
 
-  const dmg = dmgCalc(attacker);
-  log(`${attacker.name} attacks for ${dmg} damage!`, attackerSide === "p1" ? "good" : "bad");
+  // Match Story Battle attack behavior as closely as possible (damage types + after-action passives)
   playSfx("sfxAttack", 0.75);
 
-  spawnAttackFx(attackerSide === "p1" ? "player" : "enemy", attackerSide === "p1" ? "enemy" : "player");
-  applyDamage(defender, dmg, { source: "attack", damageType: "physical", attacker, attackerName: attacker.name });
+  const isZuki = attacker && attacker.id === "zukinimato";
+  const zukiTrue = isZuki && (attacker.zukiForm >= 6 || attacker.zukiTrueAttack);
 
-  // ✅ Daysi passive triggers after each action (attack)
+  const isEyjies = attacker && attacker.id === "eyJiEs";
+  const isHalakaReality = attacker && attacker.id === "halaka" && attacker.halakaForm === "reality";
+
+  // Ey-Ji-Es passive: basic attacks deal TRUE damage equal to CURRENT ATK.
+  // Halaka (Reality): basic attacks become TRUE damage equal to CURRENT damage.
+  const dmg = (isEyjies || isHalakaReality) ? dmgCalcNoRng(attacker) : dmgCalc(attacker);
+  const dmgType = isEyjies ? "true" : (isHalakaReality ? "true" : (zukiTrue ? "true" : "physical"));
+
+  log(`${attacker.name} attacks for ${dmg} damage!`, attackerSide === "p1" ? "good" : "bad", { src: attacker.name, tgt: defender.name, kind: "attack" });
+
+  spawnAttackFx(attackerSide === "p1" ? "player" : "enemy", attackerSide === "p1" ? "enemy" : "player");
+  applyDamage(defender, dmg, { source: "attack", damageType: dmgType, attacker, attackerName: attacker.name });
+
+  // ✅ Zukinimato Form 6/7: extra random true damage each basic attack
+  if (zukiTrue && attacker.zukiRandomTrue && defender && Number(defender.hp || 0) > 0) {
+    const extra = Math.floor(Math.random() * (50 - 30 + 1)) + 30;
+    log(`⚡ ${attacker.name} deals an extra ${extra} TRUE damage!`, attackerSide === "p1" ? "good" : "bad");
+    applyDamage(defender, extra, { source: "attack", damageType: "true", attacker, attackerName: attacker.name });
+  }
+
+  // ✅ Zukinimato Form 6: growth per attack (+5 DEF/+5 HP)
+  if (zukiTrue && attacker.zukiGrowthOnAttack) {
+    gainShield(attacker, 5);
+    attacker.maxHp = Number(attacker.maxHp || attacker.hp || 0) + 5;
+    if (canHeal(attacker)) {
+      attacker.hp = Math.min(attacker.maxHp, Number(attacker.hp || 0) + 5);
+    }
+    log(`🛡️ ${attacker.name} gains +5 DEF and +5 HEALTH from attacking!`, attackerSide === "p1" ? "good" : "bad");
+  }
+
+  // ✅ After-action passives (same set as Battle)
   try { applyDaysiAfterActionPassive(attacker); } catch(e) {}
+  try { applyLuckyCatAfterActionPassive(attacker, defender); } catch(e) {}
+  try { applySpaceSkeletonPirateAfterActionPassive(attacker, defender); } catch(e) {}
+  try { applyAngeloAfterActionPassive(attacker); } catch(e) {}
 
   // 🪬 PVP relic triggers (shop-only relic IDs)
-try { pvpAfterAttackRelics(attackerSide, attacker, defender, dmg); } catch(e) {}
+  try { pvpAfterAttackRelics(attackerSide, attacker, defender, dmg); } catch(e) {}
 
   updateUI();
 }
@@ -7691,11 +7723,7 @@ function pvpUseSkill(attacker, defender, attackerSide) {
     return;
   }
   if (attacker.stun2Rounds > 0) {
-    log(`${attacker.name}
-
-  // Arena FX
-  try { flashArenaOnSkill(); } catch (e) {}
- is stunned and cannot use a skill!`, "warn");
+    log(`${attacker.name} is stunned and cannot use a skill! (${attacker.stun2Rounds} rounds left)`, "warn");
     pvpEnd(attackerSide, { auto:true, reason:"stunned" });
     return;
   }
@@ -7705,13 +7733,30 @@ function pvpUseSkill(attacker, defender, attackerSide) {
     return;
   }
 
+  // Arena FX (same vibe as Battle)
+  try { flashArenaOnSkill(); } catch (e) {}
+
   const res = attacker.base.skill(attacker, defender, state);
   if (res && res.ok) {
     playSfx("sfxSkill", 0.75);
     log(res.msg, attackerSide === "p1" ? "good" : "bad");
 
-    // ✅ Daysi passive triggers after each action (skill)
+    // ✅ META: Mark recoil — using skill while Marked causes 4 recoil damage
+    if (attacker.mark && attacker.mark > 0) {
+      applyDamage(attacker, 4, { source: "status", damageType: "true", attackerName: "Mark Recoil", _markRecoil: true });
+      log(`🎯 Mark recoil! ${attacker.name} takes 4 damage for using a skill while Marked.`, "warn");
+    }
+
+    // ✅ META: Constellation Curse — skill cooldown becomes +1 longer while cursed
+    if (attacker.constellationCurse && attacker.constellationCurse > 0) {
+      attacker.cooldown = Math.max(0, Number(attacker.cooldown || 0) || 0) + 1;
+      log(`🌙 Constellation Curse extends ${attacker.name}'s cooldown by +1.`, "warn");
+    }
+
+    // ✅ After-action passives (same set as Battle)
     try { applyDaysiAfterActionPassive(attacker); } catch(e) {}
+    try { applyLuckyCatAfterActionPassive(attacker, defender); } catch(e) {}
+    try { applyAngeloAfterActionPassive(attacker); } catch(e) {}
 
     updateUI();
   } else if (res && res.ok === false) {
